@@ -25,7 +25,8 @@ import {
   UserPlus
 } from 'lucide-react'
 
-const API_URL = 'http://localhost:3000/api'
+const API_URL = import.meta.env.VITE_API_URL
+const BASE_URL = API_URL?.replace('/api', '') || 'http://api.popbill.in'
 
 const Sidebar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -50,7 +51,7 @@ const Sidebar = () => {
       const user = JSON.parse(storedUser)
       setCurrentUser(user)
       if (user?.logo) {
-        setLogo(`http://localhost:3000${user.logo}`)
+        setLogo(`${BASE_URL}${user.logo}`)
       }
     }
   }, [])
@@ -107,7 +108,7 @@ const Sidebar = () => {
         setCurrentUser(updatedUser)
         
         if (updatedUser.logo) {
-          const logoUrl = `http://localhost:3000${updatedUser.logo}`
+          const logoUrl = `${BASE_URL}${updatedUser.logo}`
           console.log('Setting logo to:', logoUrl)
           setLogo(logoUrl)
         } else {

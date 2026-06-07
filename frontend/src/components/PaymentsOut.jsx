@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 
-const API_URL = 'http://localhost:3000/api'
-const PURCHASE_API_URL = 'http://localhost:3000/api/purchase'
+const API_URL = import.meta.env.VITE_API_URL
+const PURCHASE_API_URL = `${API_URL}/purchase`
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token')

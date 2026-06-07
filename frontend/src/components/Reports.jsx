@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
-const API_URL = 'http://localhost:3000/api/reports'
+const BASE_API_URL = import.meta.env.VITE_API_URL
+const API_URL = `${BASE_API_URL}/reports`
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token')
@@ -118,7 +119,7 @@ function Reports() {
 
   const fetchParties = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/parties', { headers: getAuthHeaders() })
+      const res = await fetch(`${BASE_API_URL}/parties`, { headers: getAuthHeaders() })
       setParties(await res.json())
     } catch (err) {
       console.error('Failed to fetch parties')

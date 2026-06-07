@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, X } from 'lucide-react'
 
-const API_URL = 'http://localhost:3000/api/purchase'
-const PRODUCTS_API_URL = 'http://localhost:3000/api/products'
+const API_URL = import.meta.env.VITE_API_URL
+const PURCHASE_API_URL = `${API_URL}/purchase`
+const PRODUCTS_API_URL = `${API_URL}/products`
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token')
@@ -134,7 +135,7 @@ function Purchase() {
 
   const fetchPurchases = async () => {
     try {
-      const res = await fetch(API_URL, { headers: getAuthHeaders() })
+      const res = await fetch(PURCHASE_API_URL, { headers: getAuthHeaders() })
       const data = await res.json()
       setPurchases(data)
     } catch (err) {
