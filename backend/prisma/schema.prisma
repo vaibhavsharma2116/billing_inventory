@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  CSA
+  USER
+}
+
+model Distributor {
+  id                       String        @id @default(cuid())
+  companyName              String
+  ownerName                String
+  email                    String        @unique
+  phone                    String
+  city                     String
+  gstIn                    String        @unique
+  isActive                 Boolean       @default(true)
+  totalCompanyDebits        Decimal       @default(0)
+  totalAmountRealized       Decimal       @default(0)
+  pendingCompanyBalance     Decimal       @default(0)
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  adminId                  String?
+  admin                    User?         @relation("AdminDistributors", fields: [adminId], references: [id], onDelete: SetNull)
+  csaId                    String?
+  csa                      User?         @relation("CSADistributors", fields: [csaId], references: [id], onDelete: SetNull)
+  users                    User[]
+  products                 Product[]
+  parties                  Party[]
+  invoices                 Invoice[]
+  invoiceItems             InvoiceItem[]
+  purchaseLedgers          PurchaseLedger[]
+  purchaseItems            PurchaseItem[]
+  claims                   Claim[]
+  salesReturns             SalesReturn[]
+  salesReturnItems         SalesReturnItem[]
+  paymentsIn               PaymentIn[]
+  purchaseReturns          PurchaseReturn[]
+  purchaseReturnItems      PurchaseReturnItem[]
+  paymentsOut              PaymentOut[]
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  password     String
+  role         Role          @default(USER)
+  logo         String?
+  distributorId String?
+  distributor  Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  adminId      String?
+  admin        User?         @relation("AdminCSAs", fields: [adminId], references: [id], onDelete: SetNull)
+  managedDistributors Distributor[] @relation("AdminDistributors")
+  managedCSAs  User[]        @relation("AdminCSAs")
+  managedCsaDistributors Distributor[] @relation("CSADistributors")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Party {
+  id          String        @id @default(cuid())
+  name        String
+  gstin       String?
+  address     String?
+  creditLimit Decimal?
+  phone       String?
+  distributorId String
+  distributor Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  invoices    Invoice[]
+  salesReturns SalesReturn[]
+  paymentsIn  PaymentIn[]
+}
+
+model Product {
+  id                  String               @id @default(cuid())
+  name                String
+  sku                 String
+  hsn                 String?
+  batchNo             String?
+  expiryDate          DateTime?
+  costPrice           Decimal
+  baseSellingPrice    Decimal
+  gstPercentage       Decimal
+  currentStock        Int                  @default(0)
+  distributorId       String
+  distributor         Distributor          @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  invoiceItems        InvoiceItem[]
+  purchaseItems       PurchaseItem[]
+  salesReturnItems    SalesReturnItem[]
+  purchaseReturnItems PurchaseReturnItem[]
+  @@unique([distributorId, sku])
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNo     String
+  partyId       String
+  party         Party         @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  distributorId String
+  distributor   Distributor   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  date          DateTime      @default(now())
+  taxableValue  Decimal
+  cgst          Decimal       @default(0)
+  sgst          Decimal       @default(0)
+  igst          Decimal       @default(0)
+  grandTotal    Decimal
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  invoiceItems  InvoiceItem[]
+  @@unique([distributorId, invoiceNo])
+}
+
+model InvoiceItem {
+  id                  String     @id @default(cuid())
+  invoiceId           String
+  invoice             Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product    @relation(fields: [productId], references: [id])
+  distributorId       String
+  distributor         Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  qty                 Int
+  costPrice           Decimal?
+  rate                Decimal
+  gstPercentage       Decimal
+  extraMarginPercentage Decimal  @default(0)
+  total               Decimal
+  createdAt           DateTime   @default(now())
+}
+
+model PurchaseLedger {
+  id             String         @id @default(cuid())
+  supplierName   String
+  invoiceNo      String
+  date           DateTime       @default(now())
+  totalAmount    Decimal
+  distributorId  String
+  distributor    Distributor    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  purchaseItems  PurchaseItem[]
+  @@unique([distributorId, invoiceNo])
+}
+
+model PurchaseItem {
+  id           String          @id @default(cuid())
+  purchaseId   String
+  purchase     PurchaseLedger  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product         @relation(fields: [productId], references: [id])
+  distributorId String
+  distributor  Distributor     @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  qty          Int
+  costPrice    Decimal
+  batchNo      String?
+  expiryDate   DateTime?
+  createdAt    DateTime        @default(now())
+}
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  PAID
+}
+
+model Claim {
+  id            String      @id @default(cuid())
+  brandName     String
+  claimDetails  String
+  amount        Decimal
+  status        ClaimStatus @default(PENDING)
+  distributorId String
+  distributor   Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model SalesReturn {
+  id              String            @id @default(cuid())
+  returnNo        String
+  partyId         String
+  party           Party             @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  distributorId   String
+  distributor     Distributor       @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  date            DateTime          @default(now())
+  reason          String?
+  taxableValue    Decimal
+  cgst            Decimal           @default(0)
+  sgst            Decimal           @default(0)
+  igst            Decimal           @default(0)
+  grandTotal      Decimal
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  salesReturnItems SalesReturnItem[]
+  @@unique([distributorId, returnNo])
+}
+
+model SalesReturnItem {
+  id               String         @id @default(cuid())
+  salesReturnId    String
+  salesReturn      SalesReturn    @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id])
+  distributorId    String
+  distributor      Distributor    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  qty              Int
+  costPrice        Decimal?
+  rate             Decimal
+  gstPercentage    Decimal
+  total            Decimal
+  createdAt        DateTime       @default(now())
+}
+
+model PaymentIn {
+  id             String      @id @default(cuid())
+  paymentNo      String
+  partyId        String
+  party          Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  distributorId  String
+  distributor    Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  date           DateTime    @default(now())
+  amount         Decimal
+  paymentMode    String
+  referenceNo    String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  @@unique([distributorId, paymentNo])
+}
+
+model PurchaseReturn {
+  id                 String                @id @default(cuid())
+  returnNo           String
+  supplierName       String
+  distributorId      String
+  distributor        Distributor           @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  date               DateTime              @default(now())
+  reason             String?
+  taxableValue       Decimal
+  cgst               Decimal               @default(0)
+  sgst               Decimal               @default(0)
+  igst               Decimal               @default(0)
+  grandTotal         Decimal
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  purchaseReturnItems PurchaseReturnItem[]
+  @@unique([distributorId, returnNo])
+}
+
+model PurchaseReturnItem {
+  id                 String         @id @default(cuid())
+  purchaseReturnId   String
+  purchaseReturn     PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product        @relation(fields: [productId], references: [id])
+  distributorId      String
+  distributor        Distributor    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  qty                Int
+  costPrice          Decimal
+  gstPercentage      Decimal
+  total              Decimal
+  createdAt          DateTime       @default(now())
+}
+
+model PaymentOut {
+  id             String      @id @default(cuid())
+  paymentNo      String
+  supplierName   String
+  distributorId  String
+  distributor    Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  date           DateTime    @default(now())
+  amount         Decimal
+  paymentMode    String
+  referenceNo    String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  @@unique([distributorId, paymentNo])
+}

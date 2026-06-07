@@ -1,0 +1,51 @@
+const express = require('express')
+const cors = require('cors')
+const path = require('path')
+require('dotenv').config()
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+app.use(cors())
+app.use(express.json())
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Distributor Billing & Inventory API' })
+})
+
+const partiesRouter = require('./routes/parties')
+const productsRouter = require('./routes/products')
+const purchaseRouter = require('./routes/purchase')
+const invoicesRouter = require('./routes/invoices')
+const reportsRouter = require('./routes/reports')
+const claimsRouter = require('./routes/claims')
+const usersRouter = require('./routes/users')
+const superadminRouter = require('./routes/superadmin')
+const adminRouter = require('./routes/admin')
+const csaRouter = require('./routes/csa')
+const financeRouter = require('./routes/finance')
+const salesReturnsRouter = require('./routes/salesReturns')
+const paymentsInRouter = require('./routes/paymentsIn')
+const purchaseReturnsRouter = require('./routes/purchaseReturns')
+const paymentsOutRouter = require('./routes/paymentsOut')
+
+app.use('/api/parties', partiesRouter)
+app.use('/api/products', productsRouter)
+app.use('/api/purchase', purchaseRouter)
+app.use('/api/invoices', invoicesRouter)
+app.use('/api/reports', reportsRouter)
+app.use('/api/claims', claimsRouter)
+app.use('/api/users', usersRouter)
+app.use('/api/superadmin', superadminRouter)
+app.use('/api/admin', adminRouter)
+app.use('/api/csa', csaRouter)
+app.use('/api/superadmin/finance', financeRouter)
+app.use('/api/sales-returns', salesReturnsRouter)
+app.use('/api/payments-in', paymentsInRouter)
+app.use('/api/purchase-returns', purchaseReturnsRouter)
+app.use('/api/payments-out', paymentsOutRouter)
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`)
+})
