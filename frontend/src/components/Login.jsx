@@ -114,10 +114,7 @@ function Login() {
             </button>
           </form>
           
-          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-            <p className="text-xs text-gray-600 mb-2">Demo Credentials:</p>
-            <p className="text-xs text-gray-800"><strong>Super Admin:</strong> superadmin@example.com / superadmin123</p>
-          </div>
+
         </div>
       </div>
     </div>
