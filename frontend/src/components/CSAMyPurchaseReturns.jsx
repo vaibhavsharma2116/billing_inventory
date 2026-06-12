@@ -18,6 +18,9 @@ const formatCurrency = (amount) => {
 function CSAMyPurchaseReturns() {
   const [products, setProducts] = useState([])
   const [purchaseReturns, setPurchaseReturns] = useState([])
+  const [suppliers, setSuppliers] = useState([])
+  const [supplierName, setSupplierName] = useState('')
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
   const [searchProduct, setSearchProduct] = useState('')
   const [showProductDropdown, setShowProductDropdown] = useState(false)
   const [items, setItems] = useState([])
@@ -28,9 +31,11 @@ function CSAMyPurchaseReturns() {
   const [showList, setShowList] = useState(false)
   
   const productDropdownRef = useRef(null)
+  const supplierDropdownRef = useRef(null)
 
   useEffect(() => {
     fetchProducts()
+    fetchSuppliers()
   }, [])
 
   const fetchProducts = async () => {
@@ -44,10 +49,33 @@ function CSAMyPurchaseReturns() {
     }
   }
 
+  const fetchSuppliers = async () => {
+    try {
+      const res = await fetch(`${API_URL}/csa/my-suppliers`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setSuppliers(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch suppliers:', err)
+    }
+  }
+
+  const filteredSuppliers = suppliers.filter(s => 
+    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
+  )
+
+  const selectSupplier = (supplier) => {
+    setSupplierName(supplier)
+    setShowSupplierDropdown(false)
+  }
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (productDropdownRef.current && !productDropdownRef.current.contains(event.target)) {
         setShowProductDropdown(false)
+      }
+      if (supplierDropdownRef.current && !supplierDropdownRef.current.contains(event.target)) {
+        setShowSupplierDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -151,7 +179,7 @@ function CSAMyPurchaseReturns() {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify({ items: returnItems, reason, isInterState })
+        body: JSON.stringify({ items: returnItems, reason, isInterState, supplierName })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -220,6 +248,7 @@ function CSAMyPurchaseReturns() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Return No</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
@@ -228,7 +257,7 @@ function CSAMyPurchaseReturns() {
               <tbody className="divide-y divide-gray-200">
                 {purchaseReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
                       No purchase returns yet
                     </td>
                   </tr>
@@ -236,6 +265,7 @@ function CSAMyPurchaseReturns() {
                   purchaseReturns.map(pr => (
                     <tr key={pr.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">{pr.returnNo}</td>
+                      <td className="px-4 py-3 text-gray-600">{pr.supplierName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(pr.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-gray-600">{pr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(pr.grandTotal)}</td>
@@ -248,6 +278,34 @@ function CSAMyPurchaseReturns() {
         </div>
       ) : (
         <div>
+          {/* Supplier Name */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
+            <div className="relative" ref={supplierDropdownRef}>
+              <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Supplier Name</label>
+              <input
+                type="text"
+                placeholder="Enter supplier name"
+                value={supplierName}
+                onChange={(e) => { setSupplierName(e.target.value); setShowSupplierDropdown(true) }}
+                onFocus={() => setShowSupplierDropdown(true)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+              {showSupplierDropdown && filteredSuppliers.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredSuppliers.map((supplier, index) => (
+                    <div
+                      key={index}
+                      onClick={() => selectSupplier(supplier)}
+                      className="px-4 py-3 hover:bg-red-50 cursor-pointer"
+                    >
+                      <div className="font-medium text-gray-800">{supplier}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Return Reason */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
             <div>
