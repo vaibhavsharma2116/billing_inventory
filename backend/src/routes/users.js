@@ -83,6 +83,9 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         logo: user.logo,
+        phone: user.phone,
+        gstin: user.gstin,
+        city: user.city,
         distributorId: user.distributorId,
         distributor: user.distributor
       }
@@ -120,6 +123,21 @@ router.post('/register', async (req, res) => {
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Registration failed' })
+  }
+})
+
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId }
+    })
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+    res.json(convertDecimals(user))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch user' })
   }
 })
 

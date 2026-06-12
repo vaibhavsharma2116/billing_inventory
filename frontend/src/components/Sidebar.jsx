@@ -185,8 +185,31 @@ const Sidebar = () => {
   ]
 
   const csaNavItems = [
-    { name: 'Dashboard', path: '/csa/dashboard', icon: Shield },
-    { name: 'Distributors', path: '/csa/distributors', icon: Building2 }
+    { name: 'Dashboard', path: '/csa/my-dashboard', icon: Shield },
+    { name: 'Distributors', path: '/csa/distributors', icon: Building2 },
+    { name: 'My Products', path: '/csa/my-products', icon: Package },
+    { 
+      name: 'Billing', 
+      icon: FileText,
+      isDropdown: true,
+      subItems: [
+        { name: 'Create Invoice', path: '/csa/my-billing', icon: FileText },
+        { name: 'Invoices List', path: '/csa/my-invoices', icon: FileBarChart2 },
+        { name: 'Sales Return', path: '/csa/my-sales-returns', icon: RefreshCw },
+        { name: 'Payment In', path: '/csa/my-payments-in', icon: CreditCard }
+      ]
+    },
+    { 
+      name: 'Purchase Intake', 
+      icon: Package,
+      isDropdown: true,
+      subItems: [
+        { name: 'Purchase Bill', path: '/csa/my-purchase', icon: FileText },
+        { name: 'Purchase Return', path: '/csa/my-purchase-returns', icon: RefreshCw },
+        { name: 'Payment Out', path: '/csa/my-payments-out', icon: CreditCard }
+      ]
+    },
+    { name: 'Reports', path: '/csa/reports', icon: FileBarChart2 }
   ]
 
   const distributorNavItems = [
@@ -224,8 +247,8 @@ const Sidebar = () => {
   const userRole = currentUser?.role || 'User'
   const userInitial = (userName || 'U').charAt(0).toUpperCase()
 
-  const isAnyBillingSubPathActive = ['/billing', '/sales-returns', '/payments-in'].some(path => location.pathname === path)
-  const isAnyPurchaseSubPathActive = ['/purchase', '/purchase-returns', '/payments-out'].some(path => location.pathname === path)
+  const isAnyBillingSubPathActive = ['/billing', '/sales-returns', '/payments-in', '/csa/my-billing', '/csa/my-invoices', '/csa/my-sales-returns', '/csa/my-payments-in'].some(path => location.pathname === path)
+  const isAnyPurchaseSubPathActive = ['/purchase', '/purchase-returns', '/payments-out', '/csa/my-purchase', '/csa/my-purchase-returns', '/csa/my-payments-out'].some(path => location.pathname === path)
 
   return (
     <>
@@ -279,11 +302,18 @@ const Sidebar = () => {
             {navItems.map((item) => {
               if (item.isDropdown) {
                 const Icon = item.icon
-                let isDropdownOpen = item.name === 'Billing' ? isBillingDropdownOpen : isPurchaseDropdownOpen
-                let toggleDropdown = item.name === 'Billing' 
-                  ? () => setIsBillingDropdownOpen(!isBillingDropdownOpen)
-                  : () => setIsPurchaseDropdownOpen(!isPurchaseDropdownOpen)
-                let isActive = item.name === 'Billing' ? isAnyBillingSubPathActive : isAnyPurchaseSubPathActive
+                let isDropdownOpen 
+                let toggleDropdown
+                let isActive
+                if (item.name === 'Billing') {
+                  isDropdownOpen = isBillingDropdownOpen
+                  toggleDropdown = () => setIsBillingDropdownOpen(!isBillingDropdownOpen)
+                  isActive = isAnyBillingSubPathActive
+                } else if (item.name === 'Purchase Intake') {
+                  isDropdownOpen = isPurchaseDropdownOpen
+                  toggleDropdown = () => setIsPurchaseDropdownOpen(!isPurchaseDropdownOpen)
+                  isActive = isAnyPurchaseSubPathActive
+                }
 
                 return (
                   <li key={item.name} className="space-y-1">
@@ -331,13 +361,15 @@ const Sidebar = () => {
                 )
               }
               const Icon = item.icon
+              const isActive = isCSA && item.path === '/csa/billing' && location.pathname === '/csa/billing' 
+                              || location.pathname === item.path
               return (
                 <li key={item.path}>
                   <Link
                     to={item.path}
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                      location.pathname === item.path
+                      isActive
                         ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md'
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}

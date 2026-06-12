@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Shield, Building2, ArrowRight, Calendar, Download, Users, Package, IndianRupee, RefreshCw, CreditCard, BarChart3, PieChart as PieChartIcon } from 'lucide-react'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js'
 import { Bar, Pie } from 'react-chartjs-2'
@@ -39,6 +40,7 @@ const getNum = (val) => {
 }
 
 export default function CSADashboard({ view = 'dashboard' }) {
+  const navigate = useNavigate()
   const [currentView, setCurrentView] = useState(view)
   const [distributors, setDistributors] = useState([])
   const [loading, setLoading] = useState(false)
@@ -196,7 +198,7 @@ export default function CSADashboard({ view = 'dashboard' }) {
   }
 
   const viewDistributorDetails = (distributorId) => {
-    window.location.href = `/csa/distributor/${distributorId}`
+    navigate(`/csa/distributor/${distributorId}`)
   }
 
   const downloadCSAReport = () => {
@@ -474,7 +476,10 @@ export default function CSADashboard({ view = 'dashboard' }) {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <button
-                            onClick={() => viewDistributorDetails(distributor.distributorId)}
+                            onClick={() => {
+                              localStorage.setItem('csaDistributorId', distributor.distributorId)
+                              viewDistributorDetails(distributor.distributorId)
+                            }}
                             className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-600 text-white rounded-lg hover:from-cyan-600 hover:to-teal-700 transition-all text-sm font-medium shadow-md hover:shadow-lg"
                           >
                             View <ArrowRight size={16} />

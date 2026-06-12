@@ -20,6 +20,23 @@ import AdminDashboard from './components/AdminDashboard'
 import AdminDistributorDetails from './components/AdminDistributorDetails'
 import CSADashboard from './components/CSADashboard'
 import CSADistributorDetails from './components/CSADistributorDetails'
+import CSAInvoicesList from './components/CSAInvoicesList'
+import CSASalesReturns from './components/CSASalesReturns'
+import CSAPaymentsIn from './components/CSAPaymentsIn'
+import CSAPurchase from './components/CSAPurchase'
+import CSAPurchaseReturns from './components/CSAPurchaseReturns'
+import CSAPaymentsOut from './components/CSAPaymentsOut'
+import CSAMyDashboard from './components/CSAMyDashboard'
+import CSAMyPurchase from './components/CSAMyPurchase'
+import CSAMyProducts from './components/CSAMyProducts'
+import CSAMyParties from './components/CSAMyParties'
+import CSAMySalesReturns from './components/CSAMySalesReturns'
+import CSAMyBilling from './components/CSAMyBilling'
+import CSAMyInvoices from './components/CSAMyInvoices'
+import CSAMyPaymentsIn from './components/CSAMyPaymentsIn'
+import CSAMyPurchaseReturns from './components/CSAMyPurchaseReturns'
+import CSAMyPaymentsOut from './components/CSAMyPaymentsOut'
+import CSAReports from './components/CSAReports'
 import SuperAdminProducts from './components/SuperAdminProducts'
 import { useEffect } from 'react'
 
@@ -133,6 +150,24 @@ function App() {
                   <Route path="/csa/dashboard" element={<CSADashboard view="dashboard" />} />
                   <Route path="/csa/distributors" element={<CSADashboard view="directory" />} />
                   <Route path="/csa/distributor/:distributorId" element={<CSADistributorDetails />} />
+                  <Route path="/csa/billing" element={<Billing />} />
+                  <Route path="/csa/invoices" element={<CSAInvoicesList />} />
+                  <Route path="/csa/sales-returns" element={<CSASalesReturns />} />
+                  <Route path="/csa/payments-in" element={<CSAPaymentsIn />} />
+                  <Route path="/csa/purchase" element={<CSAPurchase />} />
+                  <Route path="/csa/purchase-returns" element={<CSAPurchaseReturns />} />
+                  <Route path="/csa/payments-out" element={<CSAPaymentsOut />} />
+                  <Route path="/csa/my-dashboard" element={<CSAMyDashboard />} />
+                  <Route path="/csa/my-purchase" element={<CSAMyPurchase />} />
+                  <Route path="/csa/my-products" element={<CSAMyProducts />} />
+                  <Route path="/csa/my-parties" element={<CSAMyParties />} />
+                  <Route path="/csa/my-sales-returns" element={<CSAMySalesReturns />} />
+                  <Route path="/csa/my-billing" element={<CSAMyBilling />} />
+                  <Route path="/csa/my-invoices" element={<CSAMyInvoices />} />
+                  <Route path="/csa/my-payments-in" element={<CSAMyPaymentsIn />} />
+                  <Route path="/csa/my-purchase-returns" element={<CSAMyPurchaseReturns />} />
+                  <Route path="/csa/my-payments-out" element={<CSAMyPaymentsOut />} />
+                  <Route path="/csa/reports" element={<CSAReports />} />
                 </Routes>
               </main>
             </div>

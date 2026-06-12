@@ -1,0 +1,30 @@
+-- Run this as root user on your server
+
+# Step 1: Connect to PostgreSQL as postgres user
+sudo -u postgres psql
+
+# Step 2: Once in psql, run these commands one by one:
+
+\c billing_inventory
+
+GRANT ALL PRIVILEGES ON DATABASE billing_inventory TO billing_inventory;
+GRANT ALL PRIVILEGES ON SCHEMA public TO billing_inventory;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO billing_inventory;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO billing_inventory;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO billing_inventory;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO billing_inventory;
+ALTER SCHEMA public OWNER TO billing_inventory;
+
+-- Verify tables exist
+\dt
+
+-- Exit
+\q
+
+# Step 3: Now test Prisma connection
+cd /var/www/billing_inventory/backend
+npx prisma db pull
+
+# Step 4: Restart your backend server
+pm2 restart all
+

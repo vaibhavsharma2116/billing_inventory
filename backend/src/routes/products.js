@@ -24,11 +24,14 @@ const convertDecimals = (obj, keyName) => {
   return obj
 }
 
-router.get('/', authenticateToken, requireDistributor, async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const { search, lowStock, nearExpiry, inStock } = req.query
-    let where = {
-      distributorId: req.user.distributorId
+    let where = {}
+    
+    // Only filter by distributor if user is a distributor (not CSA/SUPER_ADMIN)
+    if (req.user?.distributorId) {
+      where.distributorId = req.user.distributorId
     }
     
     if (search) {

@@ -16,6 +16,7 @@ function CSADistributorDetails() {
   const [distributorRanking, setDistributorRanking] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(false)
+  const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState(null)
   
   const [dateFilter, setDateFilter] = useState('')
   const [customStartDate, setCustomStartDate] = useState(
@@ -106,6 +107,26 @@ function CSADistributorDetails() {
     if (typeof val === 'number') return val
     if (val?.toNumber) return val.toNumber()
     return parseFloat(val) || 0
+  }
+
+  const fetchSingleInvoice = async (invoiceId) => {
+    try {
+      const res = await fetch(`${API_URL}/csa/distributors/${distributorId}/invoices/${invoiceId}`, { 
+        headers: getAuthHeaders() 
+      })
+      if (res.ok) {
+        const invoice = await res.json()
+        setSelectedInvoiceForPrint(invoice)
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoice:', err)
+    }
+  }
+
+  const printInvoice = async (invoiceId) => {
+    await fetchSingleInvoice(invoiceId)
+    // Wait for next render then print
+    setTimeout(() => window.print(), 100)
   }
   
   const downloadDistributorReport = () => {
@@ -407,7 +428,9 @@ function CSADistributorDetails() {
 
   const renderInvoices = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Invoices ({distributor.invoices?.length || 0})</h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-gray-900">All Invoices ({distributor.invoices?.length || 0})</h3>
+      </div>
       {distributor.invoices && distributor.invoices.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -417,6 +440,7 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Party</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Total</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
+                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -426,6 +450,14 @@ function CSADistributorDetails() {
                   <td className="py-4 px-4 text-gray-600">{inv.party?.name}</td>
                   <td className="py-4 px-4 text-right font-semibold text-green-600">{formatCurrency(inv.grandTotal)}</td>
                   <td className="py-4 px-4 text-gray-600">{new Date(inv.date).toLocaleDateString()}</td>
+                  <td className="py-4 px-4 text-center">
+                    <button 
+                      onClick={() => printInvoice(inv.id)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition"
+                    >
+                      🖨️ Print
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -732,6 +764,123 @@ function CSADistributorDetails() {
       {activeTab === 'purchaseReturns' && renderPurchaseReturns()}
       {activeTab === 'paymentsOut' && renderPaymentsOut()}
       {activeTab === 'claims' && renderClaims()}
+
+      {/* Print Preview - Only visible when printing */}
+      {selectedInvoiceForPrint && (
+        <div className="hidden print:block fixed inset-0 bg-white p-8 z-50">
+          <div className="max-w-4xl mx-auto">
+            {/* Header with Company Info */}
+            <div className="text-center border-b border-gray-300 pb-6 mb-6">
+              <h1 className="text-3xl font-bold text-gray-900">{distributor.companyName}</h1>
+              <p className="text-gray-600 mt-2">{distributor.city}</p>
+              <p className="text-gray-600">GSTIN: {distributor.gstIn}</p>
+            </div>
+
+            {/* Invoice Title */}
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">TAX INVOICE</h2>
+                <p className="text-gray-600 mt-1">Invoice No: {selectedInvoiceForPrint.invoiceNo}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-gray-600">Date: {new Date(selectedInvoiceForPrint.date).toLocaleDateString()}</p>
+              </div>
+            </div>
+
+            {/* Party Details */}
+            <div className="bg-gray-50 p-4 rounded-lg mb-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Bill To:</h3>
+              <p className="text-gray-800">{selectedInvoiceForPrint.party?.name}</p>
+              {selectedInvoiceForPrint.party?.gstin && (
+                <p className="text-gray-600">GSTIN: {selectedInvoiceForPrint.party.gstin}</p>
+              )}
+              {selectedInvoiceForPrint.party?.phone && (
+                <p className="text-gray-600">Phone: {selectedInvoiceForPrint.party.phone}</p>
+              )}
+            </div>
+
+            {/* Items Table */}
+            <table className="w-full mb-6 border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-300 px-4 py-2 text-left">Product</th>
+                  <th className="border border-gray-300 px-4 py-2 text-center">Qty</th>
+                  <th className="border border-gray-300 px-4 py-2 text-right">Rate</th>
+                  <th className="border border-gray-300 px-4 py-2 text-right">Taxable</th>
+                  <th className="border border-gray-300 px-4 py-2 text-right">GST %</th>
+                  <th className="border border-gray-300 px-4 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedInvoiceForPrint.invoiceItems?.map((item, idx) => (
+                  <tr key={idx}>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.product?.name}
+                      {item.product?.sku && <span className="text-gray-500 text-sm block">SKU: {item.product.sku}</span>}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 text-center">{item.qty}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">{formatCurrency(item.rate)}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">{formatCurrency(item.qty * item.rate)}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">{item.gstPercentage}%</td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">{formatCurrency(item.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Totals */}
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex gap-8">
+                <span className="text-gray-600">Taxable Value:</span>
+                <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.taxableValue)}</span>
+              </div>
+              {selectedInvoiceForPrint.cgst > 0 && (
+                <div className="flex gap-8">
+                  <span className="text-gray-600">CGST:</span>
+                  <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.cgst)}</span>
+                </div>
+              )}
+              {selectedInvoiceForPrint.sgst > 0 && (
+                <div className="flex gap-8">
+                  <span className="text-gray-600">SGST:</span>
+                  <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.sgst)}</span>
+                </div>
+              )}
+              {selectedInvoiceForPrint.igst > 0 && (
+                <div className="flex gap-8">
+                  <span className="text-gray-600">IGST:</span>
+                  <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.igst)}</span>
+                </div>
+              )}
+              <div className="border-t border-gray-300 pt-2 flex gap-8 text-lg font-bold">
+                <span>Grand Total:</span>
+                <span className="text-green-600">{formatCurrency(selectedInvoiceForPrint.grandTotal)}</span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-12 pt-6 border-t border-gray-300 text-center text-gray-500">
+              <p>This is a computer generated invoice and does not require signature.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body {
+            background: white !important;
+          }
+          header, footer, nav, button, .no-print, main > *:not(.print\\:block) {
+            display: none !important;
+          }
+          main {
+            margin-left: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

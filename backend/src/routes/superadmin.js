@@ -107,7 +107,10 @@ router.post('/csas', authenticateToken, requireSuperAdmin, async (req, res) => {
       name,
       email,
       password,
-      adminId
+      adminId,
+      phone,
+      gstin,
+      city
     } = req.body
 
     if (!name || !email || !password) {
@@ -129,7 +132,10 @@ router.post('/csas', authenticateToken, requireSuperAdmin, async (req, res) => {
         email,
         password: hashedPassword,
         role: 'CSA',
-        adminId
+        adminId,
+        phone,
+        gstin,
+        city
       }
     })
 
@@ -138,6 +144,53 @@ router.post('/csas', authenticateToken, requireSuperAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error creating CSA:', error)
     res.status(500).json({ error: 'Failed to create CSA' })
+  }
+})
+
+// Route to update a CSA
+router.put('/csas/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { name, email, adminId, phone, gstin, city, password } = req.body
+
+    // Check if CSA exists
+    const existingCsa = await prisma.user.findFirst({ 
+      where: { id, role: 'CSA' }
+    })
+
+    if (!existingCsa) {
+      return res.status(404).json({ error: 'CSA not found' })
+    }
+
+    // Prepare update data
+    const updateData = {}
+    if (name) updateData.name = name
+    if (email) {
+      // Check if email is already taken by another user
+      const existingUser = await prisma.user.findUnique({ where: { email } })
+      if (existingUser && existingUser.id !== id) {
+        return res.status(400).json({ error: 'Email already in use' })
+      }
+      updateData.email = email
+    }
+    if (adminId !== undefined) updateData.adminId = adminId
+    if (phone !== undefined) updateData.phone = phone
+    if (gstin !== undefined) updateData.gstin = gstin
+    if (city !== undefined) updateData.city = city
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10)
+      updateData.password = hashedPassword
+    }
+
+    const updatedCsa = await prisma.user.update({
+      where: { id },
+      data: updateData
+    })
+
+    res.json(convertDecimals(updatedCsa))
+  } catch (error) {
+    console.error('Error updating CSA:', error)
+    res.status(500).json({ error: 'Failed to update CSA' })
   }
 })
 

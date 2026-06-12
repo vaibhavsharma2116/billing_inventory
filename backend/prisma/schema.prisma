@@ -34,6 +34,7 @@ model Distributor {
   csa                      User?         @relation("CSADistributors", fields: [csaId], references: [id], onDelete: SetNull)
   users                    User[]
   products                 Product[]
+  userStocks               UserStock[]
   parties                  Party[]
   invoices                 Invoice[]
   invoiceItems             InvoiceItem[]
@@ -55,6 +56,9 @@ model User {
   password     String
   role         Role          @default(USER)
   logo         String?
+  phone        String?
+  gstin        String?
+  city         String?
   distributorId String?
   distributor  Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   adminId      String?
@@ -62,6 +66,20 @@ model User {
   managedDistributors Distributor[] @relation("AdminDistributors")
   managedCSAs  User[]        @relation("AdminCSAs")
   managedCsaDistributors Distributor[] @relation("CSADistributors")
+  createdInvoices Invoice[] @relation("CreatedInvoices")
+  userStocks   UserStock[]
+  parties      Party[]
+  products     Product[]
+  invoices     Invoice[]
+  invoiceItems InvoiceItem[]
+  purchaseLedgers PurchaseLedger[]
+  purchaseItems PurchaseItem[]
+  salesReturns SalesReturn[]
+  salesReturnItems SalesReturnItem[]
+  paymentsIn   PaymentIn[]
+  purchaseReturns PurchaseReturn[]
+  purchaseReturnItems PurchaseReturnItem[]
+  paymentsOut  PaymentOut[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 }
@@ -73,8 +91,10 @@ model Party {
   address     String?
   creditLimit Decimal?
   phone       String?
-  distributorId String
-  distributor Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId String?
+  distributor Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId       String?
+  csa         User?         @relation(fields: [csaId], references: [id], onDelete: Cascade)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   invoices    Invoice[]
@@ -82,6 +102,37 @@ model Party {
   paymentsIn  PaymentIn[]
 }
 
+model MasterProduct {
+  id                  String               @id @default(cuid())
+  name                String
+  sku                 String               @unique
+  hsn                 String?
+  batchNo             String?
+  expiryDate          DateTime?
+  costPrice           Decimal
+  baseSellingPrice    Decimal
+  gstPercentage       Decimal
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  userStocks          UserStock[]
+}
+
+model UserStock {
+  id                  String               @id @default(cuid())
+  masterProductId     String
+  masterProduct       MasterProduct        @relation(fields: [masterProductId], references: [id], onDelete: Cascade)
+  userId              String?
+  user                User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  distributorId       String?
+  distributor         Distributor?         @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  currentStock        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  @@unique([masterProductId, userId])
+  @@unique([masterProductId, distributorId])
+}
+
+// Keep the old Product model for backward compatibility
 model Product {
   id                  String               @id @default(cuid())
   name                String
@@ -93,24 +144,29 @@ model Product {
   baseSellingPrice    Decimal
   gstPercentage       Decimal
   currentStock        Int                  @default(0)
-  distributorId       String
-  distributor         Distributor          @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId       String?
+  distributor         Distributor?         @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId               String?
+  csa                 User?                @relation(fields: [csaId], references: [id], onDelete: Cascade)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   invoiceItems        InvoiceItem[]
   purchaseItems       PurchaseItem[]
   salesReturnItems    SalesReturnItem[]
   purchaseReturnItems PurchaseReturnItem[]
-  @@unique([distributorId, sku])
 }
 
 model Invoice {
   id            String        @id @default(cuid())
   invoiceNo     String
-  partyId       String
-  party         Party         @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  distributorId String
-  distributor   Distributor   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  partyId       String?
+  party         Party?        @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  distributorId String?
+  distributor   Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId         String?
+  csa           User?         @relation(fields: [csaId], references: [id], onDelete: Cascade)
+  createdById   String?
+  createdBy     User?         @relation("CreatedInvoices", fields: [createdById], references: [id], onDelete: SetNull)
   date          DateTime      @default(now())
   taxableValue  Decimal
   cgst          Decimal       @default(0)
@@ -120,7 +176,6 @@ model Invoice {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   invoiceItems  InvoiceItem[]
-  @@unique([distributorId, invoiceNo])
 }
 
 model InvoiceItem {
@@ -129,8 +184,10 @@ model InvoiceItem {
   invoice             Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   productId           String
   product             Product    @relation(fields: [productId], references: [id])
-  distributorId       String
-  distributor         Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId       String?
+  distributor         Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId               String?
+  csa                 User?      @relation(fields: [csaId], references: [id], onDelete: Cascade)
   qty                 Int
   costPrice           Decimal?
   rate                Decimal
@@ -146,12 +203,13 @@ model PurchaseLedger {
   invoiceNo      String
   date           DateTime       @default(now())
   totalAmount    Decimal
-  distributorId  String
-  distributor    Distributor    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId  String?
+  distributor    Distributor?   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId          String?
+  csa            User?          @relation(fields: [csaId], references: [id], onDelete: Cascade)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   purchaseItems  PurchaseItem[]
-  @@unique([distributorId, invoiceNo])
 }
 
 model PurchaseItem {
@@ -160,8 +218,10 @@ model PurchaseItem {
   purchase     PurchaseLedger  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   productId    String
   product      Product         @relation(fields: [productId], references: [id])
-  distributorId String
-  distributor  Distributor     @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId String?
+  distributor  Distributor?    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId        String?
+  csa          User?           @relation(fields: [csaId], references: [id], onDelete: Cascade)
   qty          Int
   costPrice    Decimal
   batchNo      String?
@@ -190,10 +250,12 @@ model Claim {
 model SalesReturn {
   id              String            @id @default(cuid())
   returnNo        String
-  partyId         String
-  party           Party             @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  distributorId   String
-  distributor     Distributor       @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  partyId         String?
+  party           Party?             @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  distributorId   String?
+  distributor     Distributor?       @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId           String?
+  csa             User?              @relation(fields: [csaId], references: [id], onDelete: Cascade)
   date            DateTime          @default(now())
   reason          String?
   taxableValue    Decimal
@@ -201,10 +263,9 @@ model SalesReturn {
   sgst            Decimal           @default(0)
   igst            Decimal           @default(0)
   grandTotal      Decimal
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   salesReturnItems SalesReturnItem[]
-  @@unique([distributorId, returnNo])
 }
 
 model SalesReturnItem {
@@ -213,8 +274,10 @@ model SalesReturnItem {
   salesReturn      SalesReturn    @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
   productId        String
   product          Product        @relation(fields: [productId], references: [id])
-  distributorId    String
-  distributor      Distributor    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId    String?
+  distributor      Distributor?   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId            String?
+  csa              User?          @relation(fields: [csaId], references: [id], onDelete: Cascade)
   qty              Int
   costPrice        Decimal?
   rate             Decimal
@@ -226,10 +289,12 @@ model SalesReturnItem {
 model PaymentIn {
   id             String      @id @default(cuid())
   paymentNo      String
-  partyId        String
-  party          Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  distributorId  String
-  distributor    Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  partyId        String?
+  party          Party?       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  distributorId  String?
+  distributor    Distributor? @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId          String?
+  csa            User?        @relation(fields: [csaId], references: [id], onDelete: Cascade)
   date           DateTime    @default(now())
   amount         Decimal
   paymentMode    String
@@ -237,15 +302,16 @@ model PaymentIn {
   notes          String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
-  @@unique([distributorId, paymentNo])
 }
 
 model PurchaseReturn {
   id                 String                @id @default(cuid())
   returnNo           String
   supplierName       String
-  distributorId      String
-  distributor        Distributor           @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId      String?
+  distributor        Distributor?          @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId              String?
+  csa                User?                 @relation(fields: [csaId], references: [id], onDelete: Cascade)
   date               DateTime              @default(now())
   reason             String?
   taxableValue       Decimal
@@ -256,7 +322,6 @@ model PurchaseReturn {
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   purchaseReturnItems PurchaseReturnItem[]
-  @@unique([distributorId, returnNo])
 }
 
 model PurchaseReturnItem {
@@ -265,8 +330,10 @@ model PurchaseReturnItem {
   purchaseReturn     PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
   productId          String
   product            Product        @relation(fields: [productId], references: [id])
-  distributorId      String
-  distributor        Distributor    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId      String?
+  distributor        Distributor?   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId              String?
+  csa                User?          @relation(fields: [csaId], references: [id], onDelete: Cascade)
   qty                Int
   costPrice          Decimal
   gstPercentage      Decimal
@@ -278,8 +345,10 @@ model PaymentOut {
   id             String      @id @default(cuid())
   paymentNo      String
   supplierName   String
-  distributorId  String
-  distributor    Distributor  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  distributorId  String?
+  distributor    Distributor? @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  csaId          String?
+  csa            User?        @relation(fields: [csaId], references: [id], onDelete: Cascade)
   date           DateTime    @default(now())
   amount         Decimal
   paymentMode    String
@@ -287,5 +356,4 @@ model PaymentOut {
   notes          String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
-  @@unique([distributorId, paymentNo])
 }

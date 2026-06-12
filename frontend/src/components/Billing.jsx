@@ -13,6 +13,9 @@ function Billing() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const editInvoiceId = searchParams.get('edit')
+  const userStr = localStorage.getItem('user')
+  const user = userStr ? JSON.parse(userStr) : null
+  const isCSA = user?.role === 'CSA' 
   
   const [parties, setParties] = useState([])
   const [products, setProducts] = useState([])
@@ -21,19 +24,96 @@ function Billing() {
   const [searchProduct, setSearchProduct] = useState('')
   const [showPartyDropdown, setShowPartyDropdown] = useState(false)
   const [showProductDropdown, setShowProductDropdown] = useState(false)
+  const [showDistributorDropdown, setShowDistributorDropdown] = useState(false)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [fetchingInvoice, setFetchingInvoice] = useState(false)
   const [error, setError] = useState('')
   const [savedInvoice, setSavedInvoice] = useState(null)
+  const [distributor, setDistributor] = useState(null)
+  const [distributors, setDistributors] = useState([])
+  const [selectedDistributor, setSelectedDistributor] = useState(null)
   const printRef = useRef(null)
   const partyDropdownRef = useRef(null)
   const productDropdownRef = useRef(null)
+  const distributorDropdownRef = useRef(null)
 
+  // Fetch all CSA's distributors on load
   useEffect(() => {
-    fetchParties()
-    fetchProducts()
+    if (isCSA) {
+      fetchAllCSADistributors().then(() => {
+        // If there's a saved distributor ID, select it
+        const savedDistId = localStorage.getItem('csaDistributorId')
+        if (savedDistId) {
+          // We need to wait for fetchAllCSADistributors to complete so that distributors state is set
+          // Let's check if distributors are available after a short delay
+          setTimeout(() => {
+            const foundDist = distributors.find(d => (d.distributorId || d.id) === savedDistId)
+            if (foundDist) {
+              selectDistributor(foundDist)
+            }
+          }, 100)
+        }
+      })
+    } else {
+      fetchParties()
+      fetchProducts()
+    }
   }, [])
+
+  const fetchAllCSADistributors = async () => {
+    try {
+      const res = await fetch(`${API_URL}/csa/distributors`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        const data = await res.json()
+        setDistributors(data || [])
+        // If csaDistributorId is in localStorage, pre-select it
+        const savedId = localStorage.getItem('csaDistributorId')
+        if (savedId) {
+          const found = data.find(d => d.distributorId === savedId || d.id === savedId)
+          if (found) {
+            selectDistributor(found)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch CSA distributors')
+    }
+  }
+
+  const fetchAllProducts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/products`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setProducts(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch all products')
+    }
+  }
+
+  const selectDistributor = async (dist) => {
+    const distId = dist.distributorId || dist.id
+    setSelectedDistributor(dist)
+    localStorage.setItem('csaDistributorId', distId)
+    setShowDistributorDropdown(false)
+    // Now fetch distributor details, parties, and products for this distributor
+    try {
+      const res = await fetch(`${API_URL}/csa/distributors/${distId}`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        const data = await res.json()
+        setDistributor(data)
+        setParties(data.parties || [])
+        setProducts(data.products || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch distributor data')
+    }
+    // Reset form
+    setSelectedParty(null)
+    setSearchParty('')
+    setItems([])
+  }
 
   useEffect(() => {
     if (editInvoiceId) {
@@ -48,6 +128,9 @@ function Billing() {
       }
       if (productDropdownRef.current && !productDropdownRef.current.contains(event.target)) {
         setShowProductDropdown(false)
+      }
+      if (distributorDropdownRef.current && !distributorDropdownRef.current.contains(event.target)) {
+        setShowDistributorDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -77,7 +160,11 @@ function Billing() {
   const fetchInvoiceForEdit = async (id) => {
     try {
       setFetchingInvoice(true)
-      const res = await fetch(`${API_URL}/invoices/${id}`, { headers: getAuthHeaders() })
+      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+      const url = isCSA 
+        ? `${API_URL}/csa/distributors/${currentDistId}/invoices/${id}` 
+        : `${API_URL}/invoices/${id}`
+      const res = await fetch(url, { headers: getAuthHeaders() })
       if (!res.ok) {
         const data = await res.json()
         setError(data.error || 'Failed to load invoice')
@@ -165,19 +252,16 @@ function Billing() {
     const rateWithMargin = rate * (1 + (extraMarginPercentage / 100))
     const taxable = qty * rateWithMargin
     const gstAmount = (taxable * gstPercentage) / 100
-    const gstType = getGstType()
-    const cgst = gstType === 'cgst_sgst' ? gstAmount / 2 : 0
-    const sgst = gstType === 'cgst_sgst' ? gstAmount / 2 : 0
-    const igst = gstType === 'igst' ? gstAmount : 0
-    const total = taxable + cgst + sgst + igst
-    return { rateWithMargin, taxable, cgst, sgst, igst, total }
+    const cgst = gstAmount / 2
+    const sgst = gstAmount / 2
+    const total = taxable + cgst + sgst
+    return { rateWithMargin, taxable, cgst, sgst, total }
   }
 
   const getGrandTotals = () => {
     let totalTaxable = 0
     let totalCGST = 0
     let totalSGST = 0
-    let totalIGST = 0
     let grandTotal = 0
     
     items.forEach(item => {
@@ -185,15 +269,18 @@ function Billing() {
       totalTaxable += parseFloat(totals.taxable) || 0
       totalCGST += parseFloat(totals.cgst) || 0
       totalSGST += parseFloat(totals.sgst) || 0
-      totalIGST += parseFloat(totals.igst) || 0
       grandTotal += parseFloat(totals.total) || 0
     })
     
-    return { totalTaxable, totalCGST, totalSGST, totalIGST, grandTotal }
+    return { totalTaxable, totalCGST, totalSGST, grandTotal }
   }
 
   const handleSave = async (shouldPrint = false) => {
-    if (!selectedParty) {
+    if (isCSA && !selectedDistributor) {
+      setError('Please select a distributor first!')
+      return
+    }
+    if (!isCSA && !selectedParty) {
       setError('Please select a customer first')
       return
     }
@@ -204,20 +291,30 @@ function Billing() {
     try {
       setLoading(true)
       setError('')
-      const isInterState = getGstType() === 'igst'
+      // For CSA, we don't use party, so default to cgst_sgst
+      const isInterState = isCSA ? false : getGstType() === 'igst'
       const invoiceItems = items.map(item => ({
         productId: item.productId,
+        sku: item.sku,
         qty: item.qty,
         rate: item.rate,
         gstPercentage: item.gstPercentage,
         extraMarginPercentage: item.extraMarginPercentage
       }))
       
-      const url = editInvoiceId 
-        ? `${API_URL}/invoices/${editInvoiceId}`
-        : `${API_URL}/invoices/create`
+      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
       
-      const method = editInvoiceId ? 'PUT' : 'POST'
+      const url = isCSA 
+        ? `${API_URL}/csa/distributors/${currentDistId}/invoices/create` 
+        : (editInvoiceId 
+            ? `${API_URL}/invoices/${editInvoiceId}`
+            : `${API_URL}/invoices/create`)
+      
+      const method = isCSA ? 'POST' : (editInvoiceId ? 'PUT' : 'POST')
+      
+      const requestBody = isCSA 
+        ? { items: invoiceItems, isInterState }
+        : { partyId: selectedParty.id, items: invoiceItems, isInterState }
       
       const res = await fetch(url, {
         method,
@@ -225,7 +322,7 @@ function Billing() {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify({ partyId: selectedParty.id, items: invoiceItems, isInterState })
+        body: JSON.stringify(requestBody)
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -233,7 +330,7 @@ function Billing() {
       if (shouldPrint) {
         setTimeout(() => window.print(), 100)
       }
-      // Auto reset form after successful save for new invoices
+      // Auto reset form after successful save for new invoices, and navigate back for CSA
       if (!editInvoiceId) {
         setTimeout(() => {
           handleNewInvoice()
@@ -252,7 +349,12 @@ function Billing() {
     setItems([])
     setSavedInvoice(null)
     setError('')
-    navigate('/billing')
+    if (isCSA) {
+      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+      navigate(`/csa/distributor/${currentDistId}`)
+    } else {
+      navigate('/billing')
+    }
   }
 
   const totals = getGrandTotals()
@@ -268,13 +370,33 @@ function Billing() {
   return (
     <div className="p-4 md:p-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-            {editInvoiceId ? 'Edit Invoice' : 'Customer Billing'}
-          </h1>
-          {editInvoiceId && (
-            <p className="text-gray-500 mt-1">Editing invoice #{editInvoiceId}</p>
+        <div className="flex items-center gap-3">
+          {isCSA && (
+            <button
+              onClick={() => {
+                const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+                navigate(`/csa/distributor/${currentDistId}`)
+              }}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+            >
+              ← Back
+            </button>
           )}
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
+              {isCSA 
+                ? (editInvoiceId ? 'Edit Invoice' : 'Create Invoice') 
+                : (editInvoiceId ? 'Edit Invoice' : 'Customer Billing')}
+            </h1>
+            {isCSA && distributor && (
+              <p className="text-pink-600 font-semibold mt-1">
+                Distributor: {distributor.companyName}
+              </p>
+            )}
+            {editInvoiceId && (
+              <p className="text-gray-500 mt-1">Editing invoice #{editInvoiceId}</p>
+            )}
+          </div>
         </div>
         <div className="flex gap-3">
           {(savedInvoice || editInvoiceId) && (
@@ -302,11 +424,44 @@ function Billing() {
         </div>
       )}
 
-      <div ref={printRef}>
-        {/* Customer Info */}
+      {/* Distributor Selection for CSA */}
+      {isCSA && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
-          <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Customer Details</h2>
-          <div className="relative" ref={partyDropdownRef}>
+          <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Distributor</h2>
+          <div className="relative" ref={distributorDropdownRef}>
+            <div
+              onClick={() => setShowDistributorDropdown(!showDistributorDropdown)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer flex items-center justify-between"
+            >
+              <span className={selectedDistributor ? "text-gray-900" : "text-gray-500"}>
+                {selectedDistributor?.companyName || "Select a distributor"}
+              </span>
+              <span className="text-gray-500">▼</span>
+            </div>
+            {showDistributorDropdown && distributors.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                {distributors.map(d => (
+                  <div
+                    key={d.distributorId || d.id}
+                    onClick={() => selectDistributor(d)}
+                    className={`px-4 py-3 cursor-pointer transition ${selectedDistributor?.distributorId === d.distributorId || selectedDistributor?.id === d.id ? "bg-pink-50 text-pink-700" : "hover:bg-gray-50"}`}
+                  >
+                    <div className="font-medium text-gray-800">{d.companyName}</div>
+                    <div className="text-sm text-gray-500">{d.ownerName} • {d.city}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div ref={printRef}>
+        {/* Customer Info - only for non-CSA */}
+        {!isCSA && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
+            <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Customer Details</h2>
+            <div className="relative" ref={partyDropdownRef}>
               <input
                 type="text"
                 placeholder="Search customer by name or GSTIN..."
@@ -332,23 +487,24 @@ function Billing() {
               )}
             </div>
 
-          {selectedParty && (
-            <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase">Name</label>
-                <p className="font-medium text-gray-800">{typeof selectedParty.name === 'string' ? selectedParty.name : '-'}</p>
+            {selectedParty && (
+              <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase">Name</label>
+                  <p className="font-medium text-gray-800">{typeof selectedParty.name === 'string' ? selectedParty.name : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN</label>
+                  <p className="font-medium text-gray-800">{(typeof selectedParty.gstin === 'string' && selectedParty.gstin) ? selectedParty.gstin : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
+                  <p className="font-medium text-gray-800">{(typeof selectedParty.phone === 'string' && selectedParty.phone) ? selectedParty.phone : '-'}</p>
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN</label>
-                <p className="font-medium text-gray-800">{(typeof selectedParty.gstin === 'string' && selectedParty.gstin) ? selectedParty.gstin : '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
-                <p className="font-medium text-gray-800">{(typeof selectedParty.phone === 'string' && selectedParty.phone) ? selectedParty.phone : '-'}</p>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Product Search */}
         {!savedInvoice && !editInvoiceId && (
@@ -494,23 +650,14 @@ function Billing() {
                   <span className="text-gray-600 text-sm md:text-base">Taxable Value:</span>
                   <span className="font-medium text-gray-900">₹{(parseFloat(totals.totalTaxable) || 0).toFixed(2)}</span>
                 </div>
-                {getGstType() === 'cgst_sgst' ? (
-                  <>
-                    <div className="flex items-center gap-4 md:gap-8">
-                      <span className="text-gray-600 text-sm md:text-base">CGST:</span>
-                      <span className="font-medium text-gray-900">₹{(parseFloat(totals.totalCGST) || 0).toFixed(2)}</span>
-                    </div>
-                    <div className="flex items-center gap-4 md:gap-8">
-                      <span className="text-gray-600 text-sm md:text-base">SGST:</span>
-                      <span className="font-medium text-gray-900">₹{(parseFloat(totals.totalSGST) || 0).toFixed(2)}</span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-4 md:gap-8">
-                    <span className="text-gray-600 text-sm md:text-base">IGST:</span>
-                    <span className="font-medium text-gray-900">₹{(parseFloat(totals.totalIGST) || 0).toFixed(2)}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-4 md:gap-8">
+                  <span className="text-gray-600 text-sm md:text-base">CGST:</span>
+                  <span className="font-medium text-gray-900">₹{(parseFloat(totals.totalCGST) || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-4 md:gap-8">
+                  <span className="text-gray-600 text-sm md:text-base">SGST:</span>
+                  <span className="font-medium text-gray-900">₹{(parseFloat(totals.totalSGST) || 0).toFixed(2)}</span>
+                </div>
                 <div className="border-t border-gray-300 pt-2 flex items-center gap-4 md:gap-8">
                   <span className="text-base md:text-lg font-semibold text-gray-900">Grand Total:</span>
                   <span className="text-lg md:text-xl font-bold text-pink-600">₹{(parseFloat(totals.grandTotal) || 0).toFixed(2)}</span>

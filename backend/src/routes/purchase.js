@@ -55,7 +55,7 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
       expiryDate: row['Expiry'] || row['Expiry Date'] || row['expiryDate'] || row['expiry'] || null,
       costPrice: parseFloat(row['Cost Price'] || row['costPrice'] || row['cost'] || row['Cost'] || 0),
       gstPercentage: parseFloat(row['GST%'] || row['GST'] || row['gstPercentage'] || row['gst'] || 0),
-      quantity: parseInt(row['Quantity'] || row['Qty'] || row['quantity'] || row['qty'] || 0)
+      quantity: parseInt(row['Quantity'] || row['Qty'] || row['quantity'] || row['qty'] || row['Stock'] || row['stock'] || 0)
     })).filter(item => item.sku || item.productName)
 
     console.log('Processed items:', items)

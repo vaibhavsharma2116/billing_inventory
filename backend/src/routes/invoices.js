@@ -161,6 +161,7 @@ router.post('/create', authenticateToken, requireDistributor, async (req, res) =
           invoiceNo: nextInvoiceNo,
           partyId,
           distributorId,
+          createdById: req.user.userId,
           date: new Date(),
           taxableValue: totalTaxable,
           cgst: totalCGST,

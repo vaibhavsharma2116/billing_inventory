@@ -63,8 +63,23 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     name: '',
     email: '',
     password: '',
-    adminId: ''
+    adminId: '',
+    phone: '',
+    gstin: '',
+    city: ''
   })
+  // Edit CSA state
+  const [editingCsa, setEditingCsa] = useState(null)
+  const [editCsaForm, setEditCsaForm] = useState({
+    name: '',
+    email: '',
+    adminId: '',
+    phone: '',
+    gstin: '',
+    city: '',
+    password: ''
+  })
+  const [editCsaLoading, setEditCsaLoading] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
   
   const [dateFilter, setDateFilter] = useState('')
@@ -356,7 +371,10 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
           name: '',
           email: '',
           password: '',
-          adminId: ''
+          adminId: '',
+          phone: '',
+          gstin: '',
+          city: ''
         })
         fetchAllData()
         navigate('/superadmin/dashboard')
@@ -368,6 +386,34 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
       console.error('Failed to create CSA:', err)
     } finally {
       setCreateLoading(false)
+    }
+  }
+
+  // Handle edit CSA
+  const handleEditCSA = async (e) => {
+    e.preventDefault()
+    if (!editingCsa) return
+    try {
+      setEditCsaLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/csas/${editingCsa.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(editCsaForm)
+      })
+      if (res.ok) {
+        setEditingCsa(null)
+        fetchAllData()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to update CSA')
+      }
+    } catch (err) {
+      console.error('Failed to update CSA:', err)
+    } finally {
+      setEditCsaLoading(false)
     }
   }
 
@@ -869,6 +915,77 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
           </div>
         </div>
 
+        {/* Admins and CSAs Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* All Admins */}
+          <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="text-blue-600" size={20} />
+              <h3 className="text-lg font-semibold text-gray-800">All Admins</h3>
+            </div>
+            <div className="space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : admins.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">No admins yet</div>
+              ) : (
+                admins.map((admin) => (
+                  <div key={admin.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-semibold text-gray-800">{admin.name}</p>
+                      <p className="text-xs text-gray-500">{admin.email}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* All CSAs */}
+          <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="text-purple-600" size={20} />
+              <h3 className="text-lg font-semibold text-gray-800">All CSAs</h3>
+            </div>
+            <div className="space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : csas.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">No CSAs yet</div>
+              ) : (
+                csas.map((csa) => (
+                  <div key={csa.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-semibold text-gray-800">{csa.name}</p>
+                      <p className="text-xs text-gray-500">{csa.email}</p>
+                      {csa.phone && <p className="text-xs text-gray-500">Phone: {csa.phone}</p>}
+                      {csa.gstin && <p className="text-xs text-gray-500">GSTIN: {csa.gstin}</p>}
+                      {csa.city && <p className="text-xs text-gray-500">City: {csa.city}</p>}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingCsa(csa)
+                        setEditCsaForm({
+                          name: csa.name,
+                          email: csa.email,
+                          adminId: csa.adminId || '',
+                          phone: csa.phone || '',
+                          gstin: csa.gstin || '',
+                          city: csa.city || '',
+                          password: ''
+                        })
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100 transition-all"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Top Performers - Admin, CSA, Distributors */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Top Admins */}
@@ -1200,13 +1317,37 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                     <div className="w-8 h-8 bg-gradient-to-br from-cyan-600 to-teal-700 rounded-full flex items-center justify-center">
                       <Users size={16} className="text-white" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h4 className="font-semibold text-gray-900">{csa?.name}</h4>
-                      <p className="text-xs text-gray-600">{csa?.email}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <p className="text-xs text-gray-600">{csa?.email}</p>
+                        {csa?.phone && <p className="text-xs text-gray-600">Phone: {csa.phone}</p>}
+                        {csa?.gstin && <p className="text-xs text-gray-600">GSTIN: {csa.gstin}</p>}
+                        {csa?.city && <p className="text-xs text-gray-600">City: {csa.city}</p>}
+                      </div>
                     </div>
-                    <span className="ml-auto text-xs font-semibold text-gray-700 bg-white px-2 py-1 rounded-full">
-                      {dists.length} Distributors
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-700 bg-white px-2 py-1 rounded-full">
+                        {dists.length} Distributors
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditingCsa(csa)
+                          setEditCsaForm({
+                            name: csa.name,
+                            email: csa.email,
+                            adminId: csa.adminId || '',
+                            phone: csa.phone || '',
+                            gstin: csa.gstin || '',
+                            city: csa.city || '',
+                            password: ''
+                          })
+                        }}
+                        className="text-xs font-medium bg-cyan-100 text-cyan-700 px-2 py-1 rounded-full hover:bg-cyan-200 transition-all"
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -1451,6 +1592,36 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   placeholder="Enter CSA password (min 6 chars)"
                   minLength={6}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                <input
+                  type="tel"
+                  value={csaForm.phone}
+                  onChange={(e) => setCsaForm({ ...csaForm, phone: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Enter phone number"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">GSTIN</label>
+                <input
+                  type="text"
+                  value={csaForm.gstin}
+                  onChange={(e) => setCsaForm({ ...csaForm, gstin: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Enter GSTIN"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                <input
+                  type="text"
+                  value={csaForm.city}
+                  onChange={(e) => setCsaForm({ ...csaForm, city: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Enter city"
                 />
               </div>
               <div>
@@ -1796,6 +1967,114 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit CSA Modal */}
+      {editingCsa && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">Edit CSA</h2>
+              <button
+                onClick={() => setEditingCsa(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleEditCSA} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editCsaForm.name}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, name: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={editCsaForm.email}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, email: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                  <input
+                    type="tel"
+                    value={editCsaForm.phone}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, phone: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">GSTIN</label>
+                  <input
+                    type="text"
+                    value={editCsaForm.gstin}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, gstin: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                  <input
+                    type="text"
+                    value={editCsaForm.city}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, city: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Assign to Admin</label>
+                  <select
+                    value={editCsaForm.adminId}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, adminId: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="">Select Admin (Optional)</option>
+                    {admins.map(admin => (
+                      <option key={admin.id} value={admin.id}>{admin.name} ({admin.email})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New Password (optional)</label>
+                  <input
+                    type="password"
+                    value={editCsaForm.password}
+                    onChange={(e) => setEditCsaForm({ ...editCsaForm, password: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="Leave empty to keep current password"
+                    minLength={6}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingCsa(null)}
+                  className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editCsaLoading}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-500 to-teal-600 text-white hover:from-cyan-600 hover:to-teal-700 disabled:opacity-50 rounded-xl font-medium transition"
+                >
+                  {editCsaLoading ? 'Updating...' : 'Update CSA'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

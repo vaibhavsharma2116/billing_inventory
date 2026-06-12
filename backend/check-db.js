@@ -1,18 +1,31 @@
-const prisma = require('./src/lib/prisma')
+const { PrismaClient } = require('@prisma/client')
+const prisma = new PrismaClient()
 
 async function checkDB() {
   try {
-    console.log('=== DISTRIBUTORS ===')
-    const distributors = await prisma.distributor.findMany({
-      include: { users: true }
-    })
-    console.dir(distributors, { depth: null })
+    const products = await prisma.product.findMany()
+    console.log('=== All Products ===')
+    console.log(JSON.stringify(products, null, 2))
 
-    console.log('\n=== USERS ===')
+    const csaId = 'cmpz8fs9i0001izqrwp4h857p' 
+    const csaProducts = await prisma.product.findMany({
+      where: { csaId }
+    })
+    console.log('\n=== CSA Products (csaId: ' + csaId + ') ===')
+    console.log(JSON.stringify(csaProducts, null, 2))
+
+    const csaPurchaseLedgers = await prisma.purchaseLedger.findMany({
+      where: { csaId },
+      include: { purchaseItems: true }
+    })
+    console.log('\n=== CSA Purchase Ledgers ===')
+    console.log(JSON.stringify(csaPurchaseLedgers, null, 2))
+
     const users = await prisma.user.findMany()
-    console.dir(users, { depth: null })
-  } catch (err) {
-    console.error(err)
+    console.log('\n=== Users ===')
+    console.log(JSON.stringify(users, null, 2))
+  } catch (error) {
+    console.error('Error querying DB:', error)
   } finally {
     await prisma.$disconnect()
   }
