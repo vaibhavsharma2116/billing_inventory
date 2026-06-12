@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -15,6 +15,10 @@ const formatCurrency = (amount) => {
 }
 
 function CSAMyPaymentsIn() {
+  const [distributors, setDistributors] = useState([])
+  const [selectedDistributor, setSelectedDistributor] = useState(null)
+  const [searchDistributor, setSearchDistributor] = useState('')
+  const [showDistributorDropdown, setShowDistributorDropdown] = useState(false)
   const [paymentsIn, setPaymentsIn] = useState([])
   const [amount, setAmount] = useState('')
   const [paymentMode, setPaymentMode] = useState('CASH')
@@ -24,6 +28,45 @@ function CSAMyPaymentsIn() {
   const [error, setError] = useState('')
   const [savedPayment, setSavedPayment] = useState(null)
   const [showList, setShowList] = useState(false)
+  const distributorDropdownRef = useRef(null)
+
+  useEffect(() => {
+    fetchDistributors()
+  }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (distributorDropdownRef.current && !distributorDropdownRef.current.contains(event.target)) {
+        setShowDistributorDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  const fetchDistributors = async () => {
+    try {
+      const res = await fetch(`${API_URL}/csa/distributors`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setDistributors(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch distributors:', err)
+    }
+  }
+
+  const filteredDistributors = distributors.filter(d => 
+    (typeof d.companyName === 'string' && d.companyName.toLowerCase().includes(searchDistributor.toLowerCase())) ||
+    (d.gstIn && typeof d.gstIn === 'string' && d.gstIn.toLowerCase().includes(searchDistributor.toLowerCase()))
+  )
+
+  const selectDistributor = (distributor) => {
+    setSelectedDistributor(distributor)
+    setSearchDistributor(typeof distributor.companyName === 'string' ? distributor.companyName : '')
+    setShowDistributorDropdown(false)
+  }
 
   useEffect(() => {
     if (showList) {
@@ -43,6 +86,10 @@ function CSAMyPaymentsIn() {
   }
 
   const handleSave = async () => {
+    if (!selectedDistributor) {
+      setError('Please select a distributor first')
+      return
+    }
     if (!amount || parseFloat(amount) <= 0) {
       setError('Please enter a valid amount')
       return
@@ -50,7 +97,7 @@ function CSAMyPaymentsIn() {
     try {
       setLoading(true)
       setError('')
-      const res = await fetch(`${API_URL}/csa/my-payments-in/create`, {
+      const res = await fetch(`${API_URL}/csa/distributors/${selectedDistributor.distributorId}/payments-in/create`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -85,6 +132,8 @@ function CSAMyPaymentsIn() {
     setSavedPayment(null)
     setError('')
     setShowList(false)
+    setSelectedDistributor(null)
+    setSearchDistributor('')
   }
 
   return (
@@ -136,6 +185,7 @@ function CSAMyPaymentsIn() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment No</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Distributor</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mode</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
@@ -145,7 +195,7 @@ function CSAMyPaymentsIn() {
               <tbody className="divide-y divide-gray-200">
                 {paymentsIn.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
                       No payments received yet
                     </td>
                   </tr>
@@ -153,6 +203,7 @@ function CSAMyPaymentsIn() {
                   paymentsIn.map(payment => (
                     <tr key={payment.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">{payment.paymentNo}</td>
+                      <td className="px-4 py-3 text-gray-600">{payment.distributor?.companyName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(payment.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -178,6 +229,52 @@ function CSAMyPaymentsIn() {
           <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-6">Record Payment</h2>
           
           <div className="space-y-4">
+            <div className="relative" ref={distributorDropdownRef}>
+              <label className="text-sm font-semibold text-gray-700 block mb-1">Select Distributor</label>
+              <input
+                type="text"
+                placeholder="Search distributor by company name or GSTIN..."
+                value={searchDistributor}
+                onChange={(e) => { setSearchDistributor(e.target.value); setShowDistributorDropdown(true); setSelectedDistributor(null) }}
+                onFocus={() => setShowDistributorDropdown(true)}
+                disabled={savedPayment !== null}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
+              />
+              {showDistributorDropdown && !savedPayment && filteredDistributors.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  {filteredDistributors.map(d => (
+                    <div
+                      key={d.distributorId}
+                      onClick={() => selectDistributor(d)}
+                      className="px-4 py-3 hover:bg-pink-50 cursor-pointer transition"
+                    >
+                      <div className="font-medium text-gray-800">{typeof d.companyName === 'string' ? d.companyName : 'Unnamed'}</div>
+                      <div className="text-sm text-gray-500">{(typeof d.gstIn === 'string' && d.gstIn) ? d.gstIn : 'No GSTIN'}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selectedDistributor && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase">Company Name</label>
+                      <p className="font-medium text-gray-800">{typeof selectedDistributor.companyName === 'string' ? selectedDistributor.companyName : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN</label>
+                      <p className="font-medium text-gray-800">{(typeof selectedDistributor.gstIn === 'string' && selectedDistributor.gstIn) ? selectedDistributor.gstIn : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
+                      <p className="font-medium text-gray-800">{(typeof selectedDistributor.phone === 'string' && selectedDistributor.phone) ? selectedDistributor.phone : '-'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div>
               <label className="text-sm font-semibold text-gray-700 block mb-1">Amount</label>
               <div className="relative">

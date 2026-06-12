@@ -1796,6 +1796,55 @@ router.post('/distributors/:distributorId/sales-returns/create', authenticateTok
   }
 })
 
+// Create payment in for specific distributor (CSA)
+router.post('/distributors/:distributorId/payments-in/create', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId
+    const { distributorId } = req.params
+    const { amount, paymentMode, referenceNo, notes } = req.body
+
+    if (!amount) {
+      return res.status(400).json({ error: 'Amount is required' })
+    }
+
+    // Verify distributor exists and is assigned to this CSA
+    const distributor = await prisma.distributor.findFirst({
+      where: { id: distributorId, csaId }
+    })
+
+    if (!distributor) {
+      return res.status(404).json({ error: 'Distributor not found or not assigned to you' })
+    }
+
+    const lastPayment = await prisma.paymentIn.findFirst({
+      where: { csaId },
+      orderBy: { paymentNo: 'desc' }
+    })
+    const nextPaymentNo = lastPayment 
+      ? `PYT-${parseInt(lastPayment.paymentNo.split('-')[1]) + 1}`
+      : 'PYT-1001'
+
+    const paymentIn = await prisma.paymentIn.create({
+      data: {
+        paymentNo: nextPaymentNo,
+        csaId,
+        distributorId,
+        date: new Date(),
+        amount: parseFloat(amount),
+        paymentMode,
+        referenceNo: referenceNo || null,
+        notes: notes || null
+      },
+      include: { distributor: true }
+    })
+
+    res.status(201).json(convertDecimals(paymentIn))
+  } catch (error) {
+    console.error('Create payment in error:', error)
+    res.status(500).json({ error: error.message || 'Failed to create payment in' })
+  }
+})
+
 // CSA's own sales returns
 router.get('/my-sales-returns', authenticateToken, requireCSA, async (req, res) => {
   try {
@@ -1900,7 +1949,7 @@ router.get('/my-payments-in', authenticateToken, requireCSA, async (req, res) =>
     const csaId = req.user.userId
     const paymentsIn = await prisma.paymentIn.findMany({
       where: { csaId },
-      include: { party: true },
+      include: { party: true, distributor: true },
       orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(paymentsIn))
