@@ -26,7 +26,7 @@ function CSAMyInvoices() {
 
   const fetchInvoices = async () => {
     try {
-      const res = await fetch(`${API_URL}/csa/my-invoices`, { headers: getAuthHeaders() })
+      const res = await fetch(`${API_URL}/csa/invoices/my`, { headers: getAuthHeaders() })
       if (res.ok) {
         setInvoices(await res.json())
       }
@@ -85,7 +85,7 @@ function CSAMyInvoices() {
                       <span className="font-semibold text-gray-900">{invoice.invoiceNo}</span>
                     </td>
                     <td className="px-6 py-4 text-gray-700">
-                      {invoice.party?.name || '-'}
+                      {invoice.distributor?.companyName || '-'}
                     </td>
                     <td className="px-6 py-4 text-right font-semibold text-gray-900">
                       {formatCurrency(invoice.grandTotal)}
