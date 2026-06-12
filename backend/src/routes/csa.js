@@ -651,7 +651,7 @@ router.post('/distributors/:distributorId/sales-returns/create', authenticateTok
     }
 
     const lastReturn = await prisma.salesReturn.findFirst({
-      where: { distributorId },
+      where: { csaId },
       orderBy: { returnNo: 'desc' }
     });
     const nextReturnNo = lastReturn 
@@ -664,35 +664,20 @@ router.post('/distributors/:distributorId/sales-returns/create', authenticateTok
       let totalSGST = 0;
 
       for (const item of items) {
-        const originalProduct = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!originalProduct) {
-          throw new Error(`Product not found: ${item.productId}`);
-        }
-        const productSku = item.sku || originalProduct.sku;
-        
-        let product = await tx.product.findUnique({
-          where: { distributorId_sku: { distributorId, sku: productSku } }
+        // Check if product exists and belongs to the distributor
+        const product = await tx.product.findUnique({
+          where: { id: item.productId }
         });
 
         if (!product) {
-          product = await tx.product.create({
-            data: {
-              name: originalProduct.name,
-              sku: originalProduct.sku,
-              hsn: originalProduct.hsn,
-              batchNo: originalProduct.batchNo,
-              expiryDate: originalProduct.expiryDate,
-              costPrice: originalProduct.costPrice,
-              baseSellingPrice: originalProduct.baseSellingPrice,
-              gstPercentage: originalProduct.gstPercentage,
-              currentStock: 0,
-              distributorId
-            }
-          });
+          throw new Error(`Product not found: ${item.productId}`);
         }
 
-        item.productId = product.id;
+        if (product.distributorId !== distributorId) {
+          throw new Error(`Product ${item.productId} does not belong to distributor ${distributorId}`);
+        }
 
+        // Update product stock
         await tx.product.update({
           where: { id: product.id },
           data: { currentStock: { increment: item.qty } }
@@ -714,12 +699,14 @@ router.post('/distributors/:distributorId/sales-returns/create', authenticateTok
         rate: item.rate,
         gstPercentage: item.gstPercentage,
         total: (item.qty * item.rate) + ((item.qty * item.rate * item.gstPercentage) / 100),
-        distributorId
+        distributorId,
+        csaId
       }));
 
       const salesReturn = await tx.salesReturn.create({
         data: {
           returnNo: nextReturnNo,
+          csaId,
           distributorId,
           date: new Date(),
           reason: reason || null,
@@ -731,15 +718,7 @@ router.post('/distributors/:distributorId/sales-returns/create', authenticateTok
             create: salesReturnItemsData
           }
         },
-        include: { salesReturnItems: { include: { product: true } } }
-      });
-
-      await tx.distributor.update({
-        where: { id: distributorId },
-        data: {
-          totalAmountRealized: { decrement: grandTotal },
-          pendingCompanyBalance: { increment: grandTotal }
-        }
+        include: { salesReturnItems: { include: { product: true } }, distributor: true }
       });
 
       return salesReturn;
