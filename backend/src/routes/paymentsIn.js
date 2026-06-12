@@ -28,7 +28,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const distributorId = req.user.distributorId
     const paymentsIn = await prisma.paymentIn.findMany({
-      where: { distributorId },
+      where: { distributorId, csaId: null },
       include: { party: true },
       orderBy: { createdAt: 'desc' }
     })

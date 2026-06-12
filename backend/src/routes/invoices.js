@@ -32,7 +32,7 @@ const convertDecimals = (obj, keyName) => {
 router.get('/', authenticateToken, requireDistributor, async (req, res) => {
   try {
     const invoices = await prisma.invoice.findMany({
-      where: { distributorId: req.user.distributorId },
+      where: { distributorId: req.user.distributorId, csaId: null },
       include: { party: true, invoiceItems: true },
       orderBy: { createdAt: 'desc' }
     })
