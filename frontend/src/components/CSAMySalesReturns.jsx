@@ -15,6 +15,10 @@ const formatCurrency = (amount) => {
 }
 
 function CSAMySalesReturns() {
+  const [distributors, setDistributors] = useState([])
+  const [selectedDistributor, setSelectedDistributor] = useState(null)
+  const [searchDistributor, setSearchDistributor] = useState('')
+  const [showDistributorDropdown, setShowDistributorDropdown] = useState(false)
   const [products, setProducts] = useState([])
   const [salesReturns, setSalesReturns] = useState([])
   const [searchProduct, setSearchProduct] = useState('')
@@ -27,26 +31,55 @@ function CSAMySalesReturns() {
   const [showList, setShowList] = useState(false)
   const printRef = useRef(null)
   const productDropdownRef = useRef(null)
+  const distributorDropdownRef = useRef(null)
 
   useEffect(() => {
-    fetchProducts()
+    fetchDistributors()
   }, [])
 
-  const fetchProducts = async () => {
+  const fetchDistributors = async () => {
     try {
-      const res = await fetch(`${API_URL}/csa/my-products`, { headers: getAuthHeaders() })
+      const res = await fetch(`${API_URL}/csa/distributors`, { headers: getAuthHeaders() })
       if (res.ok) {
-        setProducts(await res.json())
+        setDistributors(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch distributors:', err)
+    }
+  }
+
+  const fetchProductsForDistributor = async (distributorId) => {
+    try {
+      const res = await fetch(`${API_URL}/csa/distributors/${distributorId}`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        const data = await res.json()
+        setProducts(data.products || [])
       }
     } catch (err) {
       console.error('Failed to fetch products:', err)
     }
   }
 
+  const filteredDistributors = distributors.filter(d => 
+    (typeof d.companyName === 'string' && d.companyName.toLowerCase().includes(searchDistributor.toLowerCase())) ||
+    (d.gstIn && typeof d.gstIn === 'string' && d.gstIn.toLowerCase().includes(searchDistributor.toLowerCase()))
+  )
+
+  const selectDistributor = (distributor) => {
+    setSelectedDistributor(distributor)
+    setSearchDistributor(typeof distributor.companyName === 'string' ? distributor.companyName : '')
+    setShowDistributorDropdown(false)
+    fetchProductsForDistributor(distributor.distributorId)
+    setItems([])
+  }
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (productDropdownRef.current && !productDropdownRef.current.contains(event.target)) {
         setShowProductDropdown(false)
+      }
+      if (distributorDropdownRef.current && !distributorDropdownRef.current.contains(event.target)) {
+        setShowDistributorDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -128,6 +161,10 @@ function CSAMySalesReturns() {
   }
 
   const handleSave = async (shouldPrint = false) => {
+    if (!selectedDistributor) {
+      setError('Please select a distributor first')
+      return
+    }
     if (items.length === 0) {
       setError('Please add at least one item')
       return
@@ -142,7 +179,7 @@ function CSAMySalesReturns() {
         costPrice: item.costPrice,
         gstPercentage: item.gstPercentage
       }))
-      const res = await fetch(`${API_URL}/csa/my-sales-returns/create`, {
+      const res = await fetch(`${API_URL}/csa/distributors/${selectedDistributor.distributorId}/sales-returns/create`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -220,6 +257,7 @@ function CSAMySalesReturns() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Return No</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Distributor</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
@@ -228,7 +266,7 @@ function CSAMySalesReturns() {
               <tbody className="divide-y divide-gray-200">
                 {salesReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
                       No sales returns yet
                     </td>
                   </tr>
@@ -236,6 +274,7 @@ function CSAMySalesReturns() {
                   salesReturns.map(sr => (
                     <tr key={sr.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">{sr.returnNo}</td>
+                      <td className="px-4 py-3 text-gray-600">{sr.distributor?.companyName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(sr.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-gray-600">{sr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(sr.grandTotal)}</td>
@@ -248,6 +287,55 @@ function CSAMySalesReturns() {
         </div>
       ) : (
         <div ref={printRef}>
+          {/* Distributor Selection */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
+            <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Distributor</h2>
+            <div className="relative" ref={distributorDropdownRef}>
+              <input
+                type="text"
+                placeholder="Search distributor by company name or GSTIN..."
+                value={searchDistributor}
+                onChange={(e) => { setSearchDistributor(e.target.value); setShowDistributorDropdown(true); setSelectedDistributor(null) }}
+                onFocus={() => setShowDistributorDropdown(true)}
+                disabled={savedReturn !== null}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
+              />
+              {showDistributorDropdown && !savedReturn && filteredDistributors.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  {filteredDistributors.map(d => (
+                    <div
+                      key={d.distributorId}
+                      onClick={() => selectDistributor(d)}
+                      className="px-4 py-3 hover:bg-pink-50 cursor-pointer transition"
+                    >
+                      <div className="font-medium text-gray-800">{typeof d.companyName === 'string' ? d.companyName : 'Unnamed'}</div>
+                      <div className="text-sm text-gray-500">{(typeof d.gstIn === 'string' && d.gstIn) ? d.gstIn : 'No GSTIN'}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedDistributor && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase">Company Name</label>
+                    <p className="font-medium text-gray-800">{typeof selectedDistributor.companyName === 'string' ? selectedDistributor.companyName : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN</label>
+                    <p className="font-medium text-gray-800">{(typeof selectedDistributor.gstIn === 'string' && selectedDistributor.gstIn) ? selectedDistributor.gstIn : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
+                    <p className="font-medium text-gray-800">{(typeof selectedDistributor.phone === 'string' && selectedDistributor.phone) ? selectedDistributor.phone : '-'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Return Reason */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
             <label className="text-xs font-semibold text-gray-500 uppercase">Return Reason</label>
@@ -261,7 +349,7 @@ function CSAMySalesReturns() {
           </div>
 
           {/* Add Product */}
-          {!savedReturn && (
+          {!savedReturn && selectedDistributor && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
               <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Add Product</h2>
               <div className="relative" ref={productDropdownRef}>

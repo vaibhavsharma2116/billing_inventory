@@ -1727,6 +1727,96 @@ router.post('/my-invoices/create', authenticateToken, requireCSA, async (req, re
   }
 })
 
+// Create sales return for specific distributor (CSA)
+router.post('/distributors/:distributorId/sales-returns/create', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId
+    const { distributorId } = req.params
+    const { items, reason } = req.body
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'Items are required' })
+    }
+
+    // Verify distributor exists and is assigned to this CSA
+    const distributor = await prisma.distributor.findFirst({
+      where: { id: distributorId, csaId }
+    })
+
+    if (!distributor) {
+      return res.status(404).json({ error: 'Distributor not found or not assigned to you' })
+    }
+
+    const lastReturn = await prisma.salesReturn.findFirst({
+      where: { csaId },
+      orderBy: { returnNo: 'desc' }
+    })
+    const nextReturnNo = lastReturn 
+      ? `SR-${parseInt(lastReturn.returnNo.split('-')[1]) + 1}`
+      : 'SR-1001'
+
+    const result = await prisma.$transaction(async (tx) => {
+      let totalTaxable = 0
+      let totalCGST = 0
+      let totalSGST = 0
+
+      for (const item of items) {
+        const taxable = item.qty * item.rate
+        totalTaxable += taxable
+        const gstAmount = (taxable * item.gstPercentage) / 100
+        totalCGST += gstAmount / 2
+        totalSGST += gstAmount / 2
+      }
+
+      const grandTotal = totalTaxable + totalCGST + totalSGST
+
+      const salesReturnItemsData = items.map((item) => ({
+        productId: item.productId,
+        distributorId,
+        qty: item.qty,
+        costPrice: item.costPrice,
+        rate: item.rate,
+        gstPercentage: item.gstPercentage,
+        total: (item.qty * item.rate) + ((item.qty * item.rate * item.gstPercentage) / 100),
+        csaId
+      }))
+
+      // Update product stock
+      for (const item of items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { currentStock: { increment: item.qty } }
+        })
+      }
+
+      const salesReturn = await tx.salesReturn.create({
+        data: {
+          returnNo: nextReturnNo,
+          csaId,
+          distributorId,
+          date: new Date(),
+          reason: reason || null,
+          taxableValue: totalTaxable,
+          cgst: totalCGST,
+          sgst: totalSGST,
+          grandTotal,
+          salesReturnItems: {
+            create: salesReturnItemsData
+          }
+        },
+        include: { salesReturnItems: { include: { product: true } }, distributor: true }
+      })
+
+      return salesReturn
+    })
+
+    res.status(201).json(convertDecimals(result))
+  } catch (error) {
+    console.error('Create sales return error:', error)
+    res.status(500).json({ error: error.message || 'Failed to create sales return' })
+  }
+})
+
 // CSA's own sales returns
 router.get('/my-sales-returns', authenticateToken, requireCSA, async (req, res) => {
   try {
@@ -1735,7 +1825,8 @@ router.get('/my-sales-returns', authenticateToken, requireCSA, async (req, res) 
       where: { csaId },
       include: {
         salesReturnItems: { include: { product: true } },
-        party: true
+        party: true,
+        distributor: true
       },
       orderBy: { createdAt: 'desc' }
     })
