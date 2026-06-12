@@ -1163,7 +1163,17 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     const structure = {}; // { adminId: { csas: { csaId: [] }, unassigned: [] } }
     const unassignedAdmins = []; // distributors with no admin
     
-    if (!loading && distributors.length > 0) {
+    if (!loading) {
+      // First, initialize structure with all admins and their CSAs
+      admins.forEach(admin => {
+        structure[admin.id] = { csas: {}, unassigned: [] };
+        // Add all CSAs assigned to this admin, even if no distributors
+        csas.filter(csa => csa.adminId === admin.id).forEach(csa => {
+          structure[admin.id].csas[csa.id] = [];
+        });
+      });
+
+      // Now add distributors to the structure
       distributors.forEach(dist => {
         if (dist.adminId) {
           if (!structure[dist.adminId]) {
