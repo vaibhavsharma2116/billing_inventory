@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -16,6 +16,9 @@ const formatCurrency = (amount) => {
 
 function CSAMyPaymentsOut() {
   const [paymentsOut, setPaymentsOut] = useState([])
+  const [suppliers, setSuppliers] = useState([])
+  const [supplierName, setSupplierName] = useState('')
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
   const [amount, setAmount] = useState('')
   const [paymentMode, setPaymentMode] = useState('CASH')
   const [referenceNo, setReferenceNo] = useState('')
@@ -24,11 +27,13 @@ function CSAMyPaymentsOut() {
   const [error, setError] = useState('')
   const [savedPayment, setSavedPayment] = useState(null)
   const [showList, setShowList] = useState(false)
+  const supplierDropdownRef = useRef(null)
 
   useEffect(() => {
     if (showList) {
       fetchPaymentsOut()
     }
+    fetchSuppliers()
   }, [showList])
 
   const fetchPaymentsOut = async () => {
@@ -41,6 +46,38 @@ function CSAMyPaymentsOut() {
       console.error('Failed to fetch payments out')
     }
   }
+
+  const fetchSuppliers = async () => {
+    try {
+      const res = await fetch(`${API_URL}/csa/my-suppliers`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setSuppliers(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch suppliers:', err)
+    }
+  }
+
+  const filteredSuppliers = suppliers.filter(s => 
+    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
+  )
+
+  const selectSupplier = (supplier) => {
+    setSupplierName(supplier)
+    setShowSupplierDropdown(false)
+  }
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (supplierDropdownRef.current && !supplierDropdownRef.current.contains(event.target)) {
+        setShowSupplierDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   const handleSave = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -60,7 +97,8 @@ function CSAMyPaymentsOut() {
           amount: parseFloat(amount), 
           paymentMode, 
           referenceNo: referenceNo || null, 
-          notes: notes || null 
+          notes: notes || null,
+          supplierName
         })
       })
       const data = await res.json()
@@ -78,6 +116,7 @@ function CSAMyPaymentsOut() {
   }
 
   const handleNewPayment = () => {
+    setSupplierName('')
     setAmount('')
     setPaymentMode('CASH')
     setReferenceNo('')
@@ -136,6 +175,7 @@ function CSAMyPaymentsOut() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment No</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mode</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
@@ -145,7 +185,7 @@ function CSAMyPaymentsOut() {
               <tbody className="divide-y divide-gray-200">
                 {paymentsOut.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
                       No payments sent yet
                     </td>
                   </tr>
@@ -153,6 +193,7 @@ function CSAMyPaymentsOut() {
                   paymentsOut.map(payment => (
                     <tr key={payment.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">{payment.paymentNo}</td>
+                      <td className="px-4 py-3 text-gray-600">{payment.supplierName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(payment.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -178,6 +219,32 @@ function CSAMyPaymentsOut() {
           <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-6">Record Payment</h2>
           
           <div className="space-y-4">
+            {/* Supplier Name */}
+            <div className="relative" ref={supplierDropdownRef}>
+              <label className="text-sm font-semibold text-gray-700 block mb-1">Supplier Name</label>
+              <input
+                type="text"
+                placeholder="Enter supplier name"
+                value={supplierName}
+                onChange={(e) => { setSupplierName(e.target.value); setShowSupplierDropdown(true) }}
+                onFocus={() => setShowSupplierDropdown(true)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              {showSupplierDropdown && filteredSuppliers.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredSuppliers.map((supplier, index) => (
+                    <div
+                      key={index}
+                      onClick={() => selectSupplier(supplier)}
+                      className="px-4 py-3 hover:bg-green-50 cursor-pointer"
+                    >
+                      <div className="font-medium text-gray-800">{supplier}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div>
               <label className="text-sm font-semibold text-gray-700 block mb-1">Amount</label>
               <div className="relative">
