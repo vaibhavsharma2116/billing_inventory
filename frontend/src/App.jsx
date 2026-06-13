@@ -18,6 +18,8 @@ import PaymentsOut from './components/PaymentsOut'
 import InvoicesList from './components/InvoicesList'
 import AdminDashboard from './components/AdminDashboard'
 import AdminDistributorDetails from './components/AdminDistributorDetails'
+import AdminCSADetails from './components/AdminCSADetails'
+import SuperAdminCSADetails from './components/SuperAdminCSADetails'
 import CSADashboard from './components/CSADashboard'
 import CSADistributorDetails from './components/CSADistributorDetails'
 import CSAInvoicesList from './components/CSAInvoicesList'
@@ -37,6 +39,7 @@ import CSAMyPaymentsIn from './components/CSAMyPaymentsIn'
 import CSAMyPurchaseReturns from './components/CSAMyPurchaseReturns'
 import CSAMyPaymentsOut from './components/CSAMyPaymentsOut'
 import CSAReports from './components/CSAReports'
+import CSAClaims from './components/CSAClaims'
 import SuperAdminProducts from './components/SuperAdminProducts'
 import { useEffect } from 'react'
 
@@ -144,9 +147,11 @@ function App() {
                   <Route path="/superadmin/finance-ledger" element={<FinanceLedger />} />
                   <Route path="/superadmin/inventory" element={<SuperAdminProducts />} />
                   <Route path="/superadmin/distributor/:distributorId" element={<DistributorDetails />} />
+                  <Route path="/superadmin/csa/:csaId" element={<SuperAdminCSADetails />} />
                   <Route path="/admin/dashboard" element={<AdminDashboard view="dashboard" />} />
                   <Route path="/admin/distributors" element={<AdminDashboard view="directory" />} />
                   <Route path="/admin/distributor/:distributorId" element={<AdminDistributorDetails />} />
+                  <Route path="/admin/csa/:csaId" element={<AdminCSADetails />} />
                   <Route path="/csa/dashboard" element={<CSADashboard view="dashboard" />} />
                   <Route path="/csa/distributors" element={<CSADashboard view="directory" />} />
                   <Route path="/csa/distributor/:distributorId" element={<CSADistributorDetails />} />
@@ -168,6 +173,7 @@ function App() {
                   <Route path="/csa/my-purchase-returns" element={<CSAMyPurchaseReturns />} />
                   <Route path="/csa/my-payments-out" element={<CSAMyPaymentsOut />} />
                   <Route path="/csa/reports" element={<CSAReports />} />
+                  <Route path="/csa/claims" element={<CSAClaims />} />
                 </Routes>
               </main>
             </div>

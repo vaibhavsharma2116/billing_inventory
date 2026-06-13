@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Users, Package, IndianRupee, FileText, Download, AlertCircle, RefreshCw, CreditCard, ArrowLeftCircle, ArrowRightCircle, Building2, Calendar } from 'lucide-react'
@@ -9,25 +10,20 @@ const getAuthHeaders = () => {
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 
-const formatLocalDate = (date) => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function CSADistributorDetails() {
-  const { distributorId } = useParams()
+function SuperAdminCSADetails() {
+  const { csaId } = useParams()
   const navigate = useNavigate()
-  const [distributor, setDistributor] = useState(null)
-  const [distributorRanking, setDistributorRanking] = useState([])
+  const [csa, setCsa] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(false)
-  const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState(null)
   
   const [dateFilter, setDateFilter] = useState('')
-  const [customStartDate, setCustomStartDate] = useState(formatLocalDate(new Date()))
-  const [customEndDate, setCustomEndDate] = useState(formatLocalDate(new Date()))
+  const [customStartDate, setCustomStartDate] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+  const [customEndDate, setCustomEndDate] = useState(
+    new Date().toISOString().split('T')[0]
+  )
 
   const getDateRange = (filter) => {
     const now = new Date()
@@ -40,22 +36,22 @@ function CSADistributorDetails() {
         const weekEnd = new Date(weekStart)
         weekEnd.setDate(weekEnd.getDate() + 6)
         return {
-          start: formatLocalDate(weekStart),
-          end: formatLocalDate(weekEnd)
+          start: weekStart.toISOString().split('T')[0],
+          end: weekEnd.toISOString().split('T')[0]
         }
       case 'this-month':
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
         return {
-          start: formatLocalDate(monthStart),
-          end: formatLocalDate(monthEnd)
+          start: monthStart.toISOString().split('T')[0],
+          end: monthEnd.toISOString().split('T')[0]
         }
       case 'this-year':
-        const yearStart = new Date(now.getFullYear(), 0, 1)
-        const yearEnd = new Date(now.getFullYear(), 11, 31)
+        const yearStart = new Date(today.getFullYear(), 0, 1)
+        const yearEnd = new Date(today.getFullYear(), 11, 31)
         return {
-          start: formatLocalDate(yearStart),
-          end: formatLocalDate(yearEnd)
+          start: yearStart.toISOString().split('T')[0],
+          end: yearEnd.toISOString().split('T')[0]
         }
       case 'custom':
         return {
@@ -71,10 +67,10 @@ function CSADistributorDetails() {
   }
 
   useEffect(() => {
-    if (distributorId) fetchDistributorData()
-  }, [distributorId, dateFilter, customStartDate, customEndDate])
+    if (csaId) fetchCsaData()
+  }, [csaId, dateFilter, customStartDate, customEndDate])
 
-  const fetchDistributorData = async () => {
+  const fetchCsaData = async () => {
     try {
       setLoading(true)
       const dateRange = getDateRange(dateFilter)
@@ -84,22 +80,14 @@ function CSADistributorDetails() {
       if (dateRange.end) params.append('endDate', dateRange.end)
       if (params.toString()) queryParams = '?' + params.toString()
       
-      const [distRes, rankingRes] = await Promise.all([
-        fetch(`${API_URL}/csa/distributors/${distributorId}${queryParams}`, { headers: getAuthHeaders() }),
-        fetch(`${API_URL}/csa/reports/distributor-ranking${queryParams}`, { headers: getAuthHeaders() })
-      ])
+      const res = await fetch(`${API_URL}/superadmin/csas/${csaId}${queryParams}`, { headers: getAuthHeaders() })
 
-      if (distRes.ok) {
-        const dist = await distRes.json()
-        setDistributor(dist)
-      }
-
-      if (rankingRes.ok) {
-        const data = await rankingRes.json()
-        setDistributorRanking(data)
+      if (res.ok) {
+        const data = await res.json()
+        setCsa(data)
       }
     } catch (err) {
-      console.error('Failed to fetch distributor details:', err)
+      console.error('Failed to fetch CSA details:', err)
     } finally {
       setLoading(false)
     }
@@ -112,93 +100,20 @@ function CSADistributorDetails() {
     return parseFloat(val) || 0
   }
 
-  const fetchSingleInvoice = async (invoiceId) => {
-    try {
-      const res = await fetch(`${API_URL}/csa/distributors/${distributorId}/invoices/${invoiceId}`, { 
-        headers: getAuthHeaders() 
-      })
-      if (res.ok) {
-        const invoice = await res.json()
-        setSelectedInvoiceForPrint(invoice)
-      }
-    } catch (err) {
-      console.error('Failed to fetch invoice:', err)
-    }
-  }
-
-  const printInvoice = async (invoiceId) => {
-    await fetchSingleInvoice(invoiceId)
-    // Wait for next render then print
-    setTimeout(() => window.print(), 100)
-  }
-  
-  const downloadDistributorReport = () => {
-    const sales = getNum(distributor.totalSales)
-    const totalSalesAll = distributorRanking.reduce((sum, d) => sum + getNum(d.totalSales), 0)
-    const avgSales = distributorRanking.length > 0 ? totalSalesAll / distributorRanking.length : 0
-    const rank = distributorRanking.findIndex(d => d.distributorId === distributor.id || d.distributorId === distributor.distributorId) + 1
-    const totalDistributors = distributorRanking.length
-    const marketShare = totalSalesAll > 0 ? Math.round((sales / totalSalesAll) * 100) : 0
-    const salesVsAvg = avgSales > 0 ? Math.round(((sales - avgSales) / avgSales) * 100) : 0
-
-    const getPerformanceTier = (s) => {
-      if (s >= avgSales * 1.5) return 'Top Performer'
-      if (s >= avgSales * 0.8) return 'Good Performer'
-      if (s >= avgSales * 0.5) return 'Average Performer'
-      return 'Needs Attention'
-    }
-
-    const summaryHeaders = ['Metric', 'Value']
-    const summaryRows = [
-      ['Report Generated On', new Date().toLocaleString()],
-      ['Company Name', distributor.companyName],
-      ['Owner Name', distributor.ownerName],
-      ['Email', distributor.email],
-      ['Phone', distributor.phone],
-      ['City', distributor.city],
-      ['GSTIN', distributor.gstIn],
-      ['Status', distributor.isActive !== false ? 'Active' : 'Inactive'],
-      ['', ''],
-      ['=== PERFORMANCE METRICS ===', ''],
-      ['Rank', rank > 0 ? `${rank} / ${totalDistributors}` : 'N/A'],
-      ['Performance Tier', getPerformanceTier(sales)],
-      ['Total Sales', `₹${sales.toLocaleString()}`],
-      ['Market Share', `${marketShare}%`],
-      ['Sales vs Average', `${salesVsAvg > 0 ? '+' : ''}${salesVsAvg}%`],
-      ['Invoice Count', distributor.invoiceCount],
-      ['Party Count', distributor.partyCount],
-      ['Product Count', distributor.productCount]
-    ]
-
-    let csvContent = ''
-    csvContent += '===== DISTRIBUTOR PERFORMANCE REPORT =====\n'
-    csvContent += summaryHeaders.join(',') + '\n'
-    summaryRows.forEach(row => { csvContent += row.join(',') + '\n' })
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `${distributor.companyName.replace(/\s+/g, '_')}_detailed_report_${new Date().toISOString().split('T')[0]}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center h-64">
-        <div className="text-lg">Loading distributor details...</div>
+        <div className="text-lg">Loading CSA details...</div>
       </div>
     )
   }
 
-  if (!distributor) {
+  if (!csa) {
     return (
       <div className="p-8">
         <div className="text-center py-12">
-          <div className="text-xl mb-4">Distributor not found</div>
-          <button onClick={() => navigate('/csa/dashboard')} className="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700">
+          <div className="text-xl mb-4">CSA not found</div>
+          <button onClick={() => navigate('/superadmin/dashboard')} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Back to Dashboard
           </button>
         </div>
@@ -210,25 +125,25 @@ function CSADistributorDetails() {
     <div className="space-y-8">
       {/* Stats Grid 1 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 p-6 rounded-2xl border border-cyan-200">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-2xl border border-blue-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-cyan-600 rounded-xl">
-              <Users className="text-white" size={24} />
+            <div className="p-3 bg-blue-600 rounded-xl">
+              <Building2 className="text-white" size={24} />
             </div>
             <div>
-              <p className="text-sm text-cyan-700">Total Parties</p>
-              <p className="text-3xl font-bold text-cyan-900">{distributor.partyCount}</p>
+              <p className="text-sm text-blue-700">Total Distributors</p>
+              <p className="text-3xl font-bold text-blue-900">{csa.distributors?.length || 0}</p>
             </div>
           </div>
         </div>
         <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-2xl border border-purple-200">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-purple-600 rounded-xl">
-              <Package className="text-white" size={24} />
+              <Users className="text-white" size={24} />
             </div>
             <div>
-              <p className="text-sm text-purple-700">Total Products</p>
-              <p className="text-3xl font-bold text-purple-900">{distributor.productCount}</p>
+              <p className="text-sm text-purple-700">Total Parties</p>
+              <p className="text-3xl font-bold text-purple-900">{csa.totalParties}</p>
             </div>
           </div>
         </div>
@@ -239,7 +154,7 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-green-700">Total Revenue</p>
-              <p className="text-3xl font-bold text-green-900">{formatCurrency(distributor.totalRevenue)}</p>
+              <p className="text-3xl font-bold text-green-900">{formatCurrency(csa.totalRevenue)}</p>
             </div>
           </div>
         </div>
@@ -250,7 +165,7 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-orange-700">Total Invoices</p>
-              <p className="text-3xl font-bold text-orange-900">{distributor.invoiceCount}</p>
+              <p className="text-3xl font-bold text-orange-900">{csa.totalInvoices}</p>
             </div>
           </div>
         </div>
@@ -265,8 +180,8 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-red-700">Sales Returns</p>
-              <p className="text-3xl font-bold text-red-900">{formatCurrency(distributor.totalSalesReturns)}</p>
-              <p className="text-xs text-red-600 mt-1">({distributor.salesReturnCount} records)</p>
+              <p className="text-3xl font-bold text-red-900">{formatCurrency(csa.totalSalesReturns)}</p>
+              <p className="text-xs text-red-600 mt-1">({csa.totalSalesReturnsCount} records)</p>
             </div>
           </div>
         </div>
@@ -277,8 +192,8 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-emerald-700">Payments Received</p>
-              <p className="text-3xl font-bold text-emerald-900">{formatCurrency(distributor.totalPaymentsReceived)}</p>
-              <p className="text-xs text-emerald-600 mt-1">({distributor.paymentInCount} records)</p>
+              <p className="text-3xl font-bold text-emerald-900">{formatCurrency(csa.totalPaymentsReceived)}</p>
+              <p className="text-xs text-emerald-600 mt-1">({csa.totalPaymentInCount} records)</p>
             </div>
           </div>
         </div>
@@ -289,8 +204,8 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-cyan-700">Purchase Returns</p>
-              <p className="text-3xl font-bold text-cyan-900">{formatCurrency(distributor.totalPurchaseReturns)}</p>
-              <p className="text-xs text-cyan-600 mt-1">({distributor.purchaseReturnCount} records)</p>
+              <p className="text-3xl font-bold text-cyan-900">{formatCurrency(csa.totalPurchaseReturns)}</p>
+              <p className="text-xs text-cyan-600 mt-1">({csa.totalPurchaseReturnCount} records)</p>
             </div>
           </div>
         </div>
@@ -301,8 +216,8 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-rose-700">Payments Out</p>
-              <p className="text-3xl font-bold text-rose-900">{formatCurrency(distributor.totalPaymentsOut)}</p>
-              <p className="text-xs text-rose-600 mt-1">({distributor.paymentOutCount} records)</p>
+              <p className="text-3xl font-bold text-rose-900">{formatCurrency(csa.totalPaymentsOut)}</p>
+              <p className="text-xs text-rose-600 mt-1">({csa.totalPaymentOutCount} records)</p>
             </div>
           </div>
         </div>
@@ -317,39 +232,46 @@ function CSADistributorDetails() {
             </div>
             <div>
               <p className="text-sm text-pink-700">Pending Claims</p>
-              <p className="text-3xl font-bold text-pink-900">{distributor.pendingClaimsCount}</p>
-              <p className="text-xs text-pink-600 mt-1">Total: {distributor.claimCount} claims</p>
+              <p className="text-3xl font-bold text-pink-900">{csa.pendingClaimsCount}</p>
+              <p className="text-xs text-pink-600 mt-1">Total: {csa.totalClaims} claims</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Top Parties Section */}
-      {distributor.partySales && distributor.partySales.length > 0 && (
+      {/* Distributors List */}
+      {csa.distributors && csa.distributors.length > 0 && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">Top Performing Parties</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-6">Managed Distributors</h3>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Party Name</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">GSTIN</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Phone</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Invoices</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Total Revenue</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Company Name</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Owner</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">City</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Status</th>
+                  <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {distributor.partySales.slice(0, 10).map((party, idx) => (
-                  <tr key={party.partyId} className="border-b border-gray-100 hover:bg-gray-50">
+                {csa.distributors.map((dist) => (
+                  <tr key={dist.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-4 px-4 font-medium text-gray-900">{dist.companyName}</td>
+                    <td className="py-4 px-4 text-gray-600">{dist.ownerName}</td>
+                    <td className="py-4 px-4 text-gray-600">{dist.city}</td>
                     <td className="py-4 px-4">
-                      <div className="font-medium text-gray-900">{party.partyName}</div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${dist.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {dist.isActive ? 'Active' : 'Inactive'}
+                      </span>
                     </td>
-                    <td className="py-4 px-4 text-gray-600">{party.gstin}</td>
-                    <td className="py-4 px-4 text-gray-600">{party.phone}</td>
-                    <td className="py-4 px-4 text-right font-medium">{party.invoiceCount}</td>
-                    <td className="py-4 px-4 text-right font-semibold text-green-600">
-                      {formatCurrency(party.totalBilling)}
+                    <td className="py-4 px-4 text-center">
+                      <button
+                        onClick={() => navigate(`/superadmin/distributor/${dist.id}`)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all text-sm font-medium shadow-md hover:shadow-lg"
+                      >
+                        View
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -363,8 +285,8 @@ function CSADistributorDetails() {
 
   const renderParties = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Parties ({distributor.parties?.length || 0})</h3>
-      {distributor.parties && distributor.parties.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Parties ({csa.parties?.length || 0})</h3>
+      {csa.parties && csa.parties.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -372,16 +294,16 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Name</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">GSTIN</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Phone</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Address</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.parties.map((party) => (
+              {csa.parties.map((party) => (
                 <tr key={party.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{party.name}</td>
                   <td className="py-4 px-4 text-gray-600">{party.gstin}</td>
                   <td className="py-4 px-4 text-gray-600">{party.phone}</td>
-                  <td className="py-4 px-4 text-gray-600">{party.address}</td>
+                  <td className="py-4 px-4 text-gray-600">{party.distributorName}</td>
                 </tr>
               ))}
             </tbody>
@@ -395,29 +317,23 @@ function CSADistributorDetails() {
 
   const renderProducts = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Products ({distributor.products?.length || 0})</h3>
-      {distributor.products && distributor.products.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Products ({csa.products?.length || 0})</h3>
+      {csa.products && csa.products.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Name</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">SKU</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">HSN</th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Stock</th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Selling Price</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.products.map((product) => (
+              {csa.products.map((product) => (
                 <tr key={product.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{product.name}</td>
                   <td className="py-4 px-4 text-gray-600">{product.sku}</td>
-                  <td className="py-4 px-4 text-gray-600">{product.hsn}</td>
-                  <td className={`py-4 px-4 text-right font-medium ${product.currentStock > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {product.currentStock}
-                  </td>
-                  <td className="py-4 px-4 text-right font-medium">{formatCurrency(product.baseSellingPrice)}</td>
+                  <td className="py-4 px-4 text-gray-600">{product.distributorName}</td>
                 </tr>
               ))}
             </tbody>
@@ -431,10 +347,8 @@ function CSADistributorDetails() {
 
   const renderInvoices = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-gray-900">All Invoices ({distributor.invoices?.length || 0})</h3>
-      </div>
-      {distributor.invoices && distributor.invoices.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Invoices ({csa.invoices?.length || 0})</h3>
+      {csa.invoices && csa.invoices.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -442,25 +356,18 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Invoice #</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Party</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Total</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.invoices.map((inv) => (
+              {csa.invoices.map((inv) => (
                 <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{inv.invoiceNo}</td>
                   <td className="py-4 px-4 text-gray-600">{inv.party?.name}</td>
                   <td className="py-4 px-4 text-right font-semibold text-green-600">{formatCurrency(inv.grandTotal)}</td>
+                  <td className="py-4 px-4 text-gray-600">{inv.distributorName}</td>
                   <td className="py-4 px-4 text-gray-600">{new Date(inv.date).toLocaleDateString()}</td>
-                  <td className="py-4 px-4 text-center">
-                    <button 
-                      onClick={() => printInvoice(inv.id)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition"
-                    >
-                      🖨️ Print
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -474,8 +381,8 @@ function CSADistributorDetails() {
 
   const renderClaims = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Claims ({distributor.claims?.length || 0})</h3>
-      {distributor.claims && distributor.claims.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Claims ({csa.claims?.length || 0})</h3>
+      {csa.claims && csa.claims.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -484,10 +391,11 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Details</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Amount</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Status</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.claims.map((claim) => (
+              {csa.claims.map((claim) => (
                 <tr key={claim.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{claim.brandName}</td>
                   <td className="py-4 px-4 text-gray-600">{claim.claimDetails}</td>
@@ -501,6 +409,7 @@ function CSADistributorDetails() {
                       {claim.status}
                     </span>
                   </td>
+                  <td className="py-4 px-4 text-gray-600">{claim.distributorName}</td>
                 </tr>
               ))}
             </tbody>
@@ -514,8 +423,8 @@ function CSADistributorDetails() {
 
   const renderSalesReturns = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Sales Returns ({distributor.salesReturns?.length || 0})</h3>
-      {distributor.salesReturns && distributor.salesReturns.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Sales Returns ({csa.salesReturns?.length || 0})</h3>
+      {csa.salesReturns && csa.salesReturns.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -523,15 +432,17 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Return #</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Party</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Total</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.salesReturns.map((sr) => (
+              {csa.salesReturns.map((sr) => (
                 <tr key={sr.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{sr.returnNo}</td>
                   <td className="py-4 px-4 text-gray-600">{sr.party?.name}</td>
                   <td className="py-4 px-4 text-right font-semibold text-red-600">{formatCurrency(sr.grandTotal)}</td>
+                  <td className="py-4 px-4 text-gray-600">{sr.distributorName}</td>
                   <td className="py-4 px-4 text-gray-600">{new Date(sr.date).toLocaleDateString()}</td>
                 </tr>
               ))}
@@ -546,8 +457,8 @@ function CSADistributorDetails() {
 
   const renderPaymentsIn = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Payments Received ({distributor.paymentsIn?.length || 0})</h3>
-      {distributor.paymentsIn && distributor.paymentsIn.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Payments Received ({csa.paymentsIn?.length || 0})</h3>
+      {csa.paymentsIn && csa.paymentsIn.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -555,17 +466,17 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Payment #</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Party</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Amount</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Payment Mode</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.paymentsIn.map((pi) => (
+              {csa.paymentsIn.map((pi) => (
                 <tr key={pi.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{pi.paymentNo}</td>
                   <td className="py-4 px-4 text-gray-600">{pi.party?.name}</td>
                   <td className="py-4 px-4 text-right font-semibold text-green-600">{formatCurrency(pi.amount)}</td>
-                  <td className="py-4 px-4 text-gray-600">{pi.paymentMode}</td>
+                  <td className="py-4 px-4 text-gray-600">{pi.distributorName}</td>
                   <td className="py-4 px-4 text-gray-600">{new Date(pi.date).toLocaleDateString()}</td>
                 </tr>
               ))}
@@ -580,8 +491,8 @@ function CSADistributorDetails() {
 
   const renderPurchaseReturns = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Purchase Returns ({distributor.purchaseReturns?.length || 0})</h3>
-      {distributor.purchaseReturns && distributor.purchaseReturns.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Purchase Returns ({csa.purchaseReturns?.length || 0})</h3>
+      {csa.purchaseReturns && csa.purchaseReturns.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -589,15 +500,17 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Return #</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Supplier</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Total</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.purchaseReturns.map((pr) => (
+              {csa.purchaseReturns.map((pr) => (
                 <tr key={pr.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{pr.returnNo}</td>
                   <td className="py-4 px-4 text-gray-600">{pr.supplierName}</td>
                   <td className="py-4 px-4 text-right font-semibold text-blue-600">{formatCurrency(pr.grandTotal)}</td>
+                  <td className="py-4 px-4 text-gray-600">{pr.distributorName}</td>
                   <td className="py-4 px-4 text-gray-600">{new Date(pr.date).toLocaleDateString()}</td>
                 </tr>
               ))}
@@ -612,8 +525,8 @@ function CSADistributorDetails() {
 
   const renderPaymentsOut = () => (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">All Payments Out ({distributor.paymentsOut?.length || 0})</h3>
-      {distributor.paymentsOut && distributor.paymentsOut.length > 0 ? (
+      <h3 className="text-xl font-bold text-gray-900 mb-6">All Payments Out ({csa.paymentsOut?.length || 0})</h3>
+      {csa.paymentsOut && csa.paymentsOut.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -621,17 +534,17 @@ function CSADistributorDetails() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Payment #</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Supplier</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Amount</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Payment Mode</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Distributor</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
               </tr>
             </thead>
             <tbody>
-              {distributor.paymentsOut.map((po) => (
+              {csa.paymentsOut.map((po) => (
                 <tr key={po.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-4 px-4 font-medium text-gray-900">{po.paymentNo}</td>
                   <td className="py-4 px-4 text-gray-600">{po.supplierName}</td>
                   <td className="py-4 px-4 text-right font-semibold text-orange-600">{formatCurrency(po.amount)}</td>
-                  <td className="py-4 px-4 text-gray-600">{po.paymentMode}</td>
+                  <td className="py-4 px-4 text-gray-600">{po.distributorName}</td>
                   <td className="py-4 px-4 text-gray-600">{new Date(po.date).toLocaleDateString()}</td>
                 </tr>
               ))}
@@ -649,26 +562,14 @@ function CSADistributorDetails() {
       {/* Header */}
       <div className="flex items-center gap-4 mb-8 flex-wrap">
         <button 
-          onClick={() => navigate('/csa/dashboard')} 
+          onClick={() => navigate('/superadmin/dashboard')} 
           className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
         >
           ← Back
         </button>
         <h1 className="text-3xl font-bold text-gray-900">
-          {distributor.companyName}
-          <span className={`ml-3 text-sm px-3 py-1 rounded-full ${distributor.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-            {distributor.isActive ? 'Active' : 'Inactive'}
-          </span>
+          {csa.name}
         </h1>
-        <div className="flex gap-3 ml-auto">
-          <button
-            onClick={downloadDistributorReport}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-          >
-            <Download size={18} />
-            Download Report
-          </button>
-        </div>
       </div>
       
       {/* Date Filter */}
@@ -681,7 +582,7 @@ function CSADistributorDetails() {
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-600"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
           >
             <option value="">All Time</option>
             <option value="this-week">This Week</option>
@@ -697,14 +598,14 @@ function CSADistributorDetails() {
               type="date"
               value={customStartDate}
               onChange={(e) => setCustomStartDate(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-600"
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
             <span className="text-gray-500 text-sm font-medium">to</span>
             <input
               type="date"
               value={customEndDate}
               onChange={(e) => setCustomEndDate(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-600"
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           </div>
         )}
@@ -713,20 +614,20 @@ function CSADistributorDetails() {
       {/* Basic Info */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <h3 className="text-sm font-medium text-gray-500 mb-1">Owner</h3>
-          <p className="text-xl font-semibold text-gray-900">{distributor.ownerName}</p>
+          <h3 className="text-sm font-medium text-gray-500 mb-1">Name</h3>
+          <p className="text-xl font-semibold text-gray-900">{csa.name}</p>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h3 className="text-sm font-medium text-gray-500 mb-1">Contact</h3>
-          <p className="text-xl font-semibold text-gray-900">{distributor.email}</p>
+          <p className="text-xl font-semibold text-gray-900">{csa.email}</p>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <h3 className="text-sm font-medium text-gray-500 mb-1">Location</h3>
-          <p className="text-xl font-semibold text-gray-900">{distributor.city}</p>
+          <h3 className="text-sm font-medium text-gray-500 mb-1">Phone</h3>
+          <p className="text-xl font-semibold text-gray-900">{csa.phone}</p>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <h3 className="text-sm font-medium text-gray-500 mb-1">GSTIN</h3>
-          <p className="text-xl font-semibold text-gray-900">{distributor.gstIn}</p>
+          <h3 className="text-sm font-medium text-gray-500 mb-1">City</h3>
+          <p className="text-xl font-semibold text-gray-900">{csa.city}</p>
         </div>
       </div>
 
@@ -734,21 +635,21 @@ function CSADistributorDetails() {
       <div className="flex gap-4 mb-6 border-b border-gray-200 overflow-x-auto">
         {[
           { id: 'overview', label: 'Overview' },
-          { id: 'parties', label: `Parties (${distributor.partyCount})` },
-          { id: 'products', label: `Products (${distributor.productCount})` },
-          { id: 'invoices', label: `Invoices (${distributor.invoiceCount})` },
-          { id: 'salesReturns', label: `Sales Returns (${distributor.salesReturnCount})` },
-          { id: 'paymentsIn', label: `Payments In (${distributor.paymentInCount})` },
-          { id: 'purchaseReturns', label: `Purchase Returns (${distributor.purchaseReturnCount})` },
-          { id: 'paymentsOut', label: `Payments Out (${distributor.paymentOutCount})` },
-          { id: 'claims', label: `Claims (${distributor.claimCount})` }
+          { id: 'parties', label: `Parties (${csa.totalParties})` },
+          { id: 'products', label: `Products (${csa.totalProducts})` },
+          { id: 'invoices', label: `Invoices (${csa.totalInvoices})` },
+          { id: 'salesReturns', label: `Sales Returns (${csa.totalSalesReturnsCount})` },
+          { id: 'paymentsIn', label: `Payments In (${csa.totalPaymentInCount})` },
+          { id: 'purchaseReturns', label: `Purchase Returns (${csa.totalPurchaseReturnCount})` },
+          { id: 'paymentsOut', label: `Payments Out (${csa.totalPaymentOutCount})` },
+          { id: 'claims', label: `Claims (${csa.totalClaims})` }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`pb-3 px-4 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
               activeTab === tab.id
-                ? 'border-cyan-600 text-cyan-600'
+                ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -767,125 +668,9 @@ function CSADistributorDetails() {
       {activeTab === 'purchaseReturns' && renderPurchaseReturns()}
       {activeTab === 'paymentsOut' && renderPaymentsOut()}
       {activeTab === 'claims' && renderClaims()}
-
-      {/* Print Preview - Only visible when printing */}
-      {selectedInvoiceForPrint && (
-        <div className="hidden print:block fixed inset-0 bg-white p-8 z-50">
-          <div className="max-w-4xl mx-auto">
-            {/* Header with Company Info */}
-            <div className="text-center border-b border-gray-300 pb-6 mb-6">
-              <h1 className="text-3xl font-bold text-gray-900">{distributor.companyName}</h1>
-              <p className="text-gray-600 mt-2">{distributor.city}</p>
-              <p className="text-gray-600">GSTIN: {distributor.gstIn}</p>
-            </div>
-
-            {/* Invoice Title */}
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">TAX INVOICE</h2>
-                <p className="text-gray-600 mt-1">Invoice No: {selectedInvoiceForPrint.invoiceNo}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-gray-600">Date: {new Date(selectedInvoiceForPrint.date).toLocaleDateString()}</p>
-              </div>
-            </div>
-
-            {/* Party Details */}
-            <div className="bg-gray-50 p-4 rounded-lg mb-6">
-              <h3 className="font-semibold text-gray-900 mb-2">Bill To:</h3>
-              <p className="text-gray-800">{selectedInvoiceForPrint.party?.name}</p>
-              {selectedInvoiceForPrint.party?.gstin && (
-                <p className="text-gray-600">GSTIN: {selectedInvoiceForPrint.party.gstin}</p>
-              )}
-              {selectedInvoiceForPrint.party?.phone && (
-                <p className="text-gray-600">Phone: {selectedInvoiceForPrint.party.phone}</p>
-              )}
-            </div>
-
-            {/* Items Table */}
-            <table className="w-full mb-6 border-collapse">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border border-gray-300 px-4 py-2 text-left">Product</th>
-                  <th className="border border-gray-300 px-4 py-2 text-center">Qty</th>
-                  <th className="border border-gray-300 px-4 py-2 text-right">Rate</th>
-                  <th className="border border-gray-300 px-4 py-2 text-right">Taxable</th>
-                  <th className="border border-gray-300 px-4 py-2 text-right">GST %</th>
-                  <th className="border border-gray-300 px-4 py-2 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedInvoiceForPrint.invoiceItems?.map((item, idx) => (
-                  <tr key={idx}>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.product?.name}
-                      {item.product?.sku && <span className="text-gray-500 text-sm block">SKU: {item.product.sku}</span>}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2 text-center">{item.qty}</td>
-                    <td className="border border-gray-300 px-4 py-2 text-right">{formatCurrency(item.rate)}</td>
-                    <td className="border border-gray-300 px-4 py-2 text-right">{formatCurrency(item.qty * item.rate)}</td>
-                    <td className="border border-gray-300 px-4 py-2 text-right">{item.gstPercentage}%</td>
-                    <td className="border border-gray-300 px-4 py-2 text-right">{formatCurrency(item.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Totals */}
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex gap-8">
-                <span className="text-gray-600">Taxable Value:</span>
-                <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.taxableValue)}</span>
-              </div>
-              {selectedInvoiceForPrint.cgst > 0 && (
-                <div className="flex gap-8">
-                  <span className="text-gray-600">CGST:</span>
-                  <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.cgst)}</span>
-                </div>
-              )}
-              {selectedInvoiceForPrint.sgst > 0 && (
-                <div className="flex gap-8">
-                  <span className="text-gray-600">SGST:</span>
-                  <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.sgst)}</span>
-                </div>
-              )}
-              {selectedInvoiceForPrint.igst > 0 && (
-                <div className="flex gap-8">
-                  <span className="text-gray-600">IGST:</span>
-                  <span className="font-medium">{formatCurrency(selectedInvoiceForPrint.igst)}</span>
-                </div>
-              )}
-              <div className="border-t border-gray-300 pt-2 flex gap-8 text-lg font-bold">
-                <span>Grand Total:</span>
-                <span className="text-green-600">{formatCurrency(selectedInvoiceForPrint.grandTotal)}</span>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-12 pt-6 border-t border-gray-300 text-center text-gray-500">
-              <p>This is a computer generated invoice and does not require signature.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Print Styles */}
-      <style>{`
-        @media print {
-          body {
-            background: white !important;
-          }
-          header, footer, nav, button, .no-print, main > *:not(.print\\:block) {
-            display: none !important;
-          }
-          main {
-            margin-left: 0 !important;
-            padding: 0 !important;
-          }
-        }
-      `}</style>
     </div>
   )
 }
 
-export default CSADistributorDetails
+export default SuperAdminCSADetails
+

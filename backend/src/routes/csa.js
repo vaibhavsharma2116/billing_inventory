@@ -7,6 +7,20 @@ const router = express.Router()
 
 const upload = multer({ dest: 'uploads/' })
 
+const getDateRange = (query) => {
+  const { startDate, endDate } = query || {}
+  const range = {}
+  if (startDate) {
+    const start = new Date(`${startDate}T00:00:00`)
+    range.gte = start
+  }
+  if (endDate) {
+    const end = new Date(`${endDate}T23:59:59.999`)
+    range.lte = end
+  }
+  return range
+}
+
 const getNum = (val) => {
   if (typeof val === 'number') return val
   if (val?.toNumber) return val.toNumber()
@@ -15,7 +29,7 @@ const getNum = (val) => {
 
 const convertDecimals = (obj, keyName) => {
   if (!obj) return obj
-  if (['phone', 'name', 'gstin', 'gstIn', 'address', 'id', 'invoiceNo', 'batchNo', 'hsn', 'sku', 'brandName', 'claimDetails', 'status', 'logo', 'email', 'password', 'role', 'date', 'createdAt', 'updatedAt', 'expiryDate', 'companyName', 'ownerName', 'city', 'isActive', 'partyCount', 'productCount', 'invoiceCount', 'claimCount', 'salesReturnCount', 'paymentInCount', 'purchaseReturnCount', 'paymentOutCount', 'distributorId', 'partyId', 'partyName', 'totalBilling', 'supplierName', 'paymentMode', 'referenceNo', 'notes', 'reason'].includes(keyName)) {
+  if (['phone', 'name', 'gstin', 'gstIn', 'address', 'id', 'invoiceNo', 'batchNo', 'hsn', 'sku', 'brandName', 'claimDetails', 'status', 'logo', 'email', 'password', 'role', 'date', 'createdAt', 'updatedAt', 'expiryDate', 'companyName', 'ownerName', 'city', 'isActive', 'partyCount', 'productCount', 'invoiceCount', 'claimCount', 'salesReturnCount', 'paymentInCount', 'purchaseReturnCount', 'paymentOutCount', 'distributorId', 'partyId', 'partyName', 'totalBilling', 'supplierName', 'paymentMode', 'referenceNo', 'notes', 'reason', 'distributorName', 'createdByRole', 'createdByUserId'].includes(keyName)) {
     return obj
   }
   if (typeof obj === 'string' && !isNaN(obj) && obj.trim() !== '') {
@@ -32,6 +46,257 @@ const convertDecimals = (obj, keyName) => {
   }
   return obj
 }
+
+router.get('/claims/extra-margin', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId
+    const distributors = await prisma.distributor.findMany({
+      where: { csaId },
+      select: { id: true }
+    })
+    const distributorIds = distributors.map(d => d.id)
+
+    if (!distributorIds.length) {
+      return res.json({ claims: [], totalClaimAmount: 0, count: 0 })
+    }
+
+    const dateRange = getDateRange(req.query)
+    const invoiceItems = await prisma.invoiceItem.findMany({
+      where: {
+        extraMarginPercentage: { gt: 0 },
+        invoice: {
+          OR: [
+            { csaId },
+            { createdById: csaId }
+          ],
+          distributorId: { in: distributorIds },
+          date: dateRange
+        }
+      },
+      include: {
+        product: true,
+        invoice: {
+          include: {
+            distributor: true
+          }
+        }
+      }
+    })
+
+    const claims = invoiceItems.map(item => {
+      const baseAmount = item.qty * item.rate
+      const marginAmount = (baseAmount * item.extraMarginPercentage) / 100
+      return {
+        id: item.id,
+        productName: item.product?.name,
+        distributorName: item.invoice?.distributor?.companyName,
+        invoiceNo: item.invoice?.invoiceNo,
+        invoiceDate: item.invoice?.date,
+        qty: item.qty,
+        rate: item.rate,
+        extraMarginPercentage: item.extraMarginPercentage,
+        claimAmount: marginAmount
+      }
+    })
+
+    const totalClaimAmount = claims.reduce((sum, c) => sum + c.claimAmount, 0)
+
+    res.json(convertDecimals({
+      claims,
+      totalClaimAmount,
+      count: claims.length
+    }))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch CSA extra margin claims' })
+  }
+})
+
+router.get('/claims', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId
+    const dateRange = getDateRange(req.query)
+
+    const claims = await prisma.claim.findMany({
+      where: {
+        distributor: { csaId },
+        createdByRole: 'CSA',
+        createdAt: dateRange
+      },
+      include: { distributor: true },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json(convertDecimals(claims))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch CSA claims' })
+  }
+})
+
+router.post('/claims', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { brandName, claimDetails, amount, status, distributorId } = req.body
+    const distributor = await prisma.distributor.findFirst({
+      where: { id: distributorId, csaId: req.user.userId }
+    })
+
+    if (!distributor) {
+      return res.status(403).json({ error: 'Distributor not found for this CSA' })
+    }
+
+    const claim = await prisma.claim.create({
+      data: {
+        brandName,
+        claimDetails,
+        amount: parseFloat(amount),
+        status: status || 'PENDING',
+        distributorId: distributor.id,
+        csaId: req.user.userId,
+        createdByRole: 'CSA',
+        createdByUserId: req.user.userId
+      }
+    })
+
+    res.status(201).json(convertDecimals(claim))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to create CSA claim' })
+  }
+})
+
+router.put('/claims/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { brandName, claimDetails, amount, status, distributorId } = req.body
+
+    const existingClaim = await prisma.claim.findUnique({ where: { id } })
+    if (!existingClaim) {
+      return res.status(404).json({ error: 'Claim not found' })
+    }
+
+    const distributor = await prisma.distributor.findFirst({
+      where: { id: distributorId || existingClaim.distributorId, csaId: req.user.userId }
+    })
+
+    if (!distributor) {
+      return res.status(403).json({ error: 'Distributor not found for this CSA' })
+    }
+
+    const claim = await prisma.claim.update({
+      where: { id },
+      data: {
+        brandName,
+        claimDetails,
+        amount: parseFloat(amount),
+        status,
+        distributorId: distributor.id,
+        createdByRole: existingClaim.createdByRole || 'CSA',
+        createdByUserId: existingClaim.createdByUserId || req.user.userId
+      }
+    })
+
+    res.json(convertDecimals(claim))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to update CSA claim' })
+  }
+})
+
+router.delete('/claims/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const existingClaim = await prisma.claim.findUnique({ where: { id } })
+    if (!existingClaim) {
+      return res.status(404).json({ error: 'Claim not found' })
+    }
+
+    const distributor = await prisma.distributor.findFirst({
+      where: { id: existingClaim.distributorId, csaId: req.user.userId }
+    })
+
+    if (!distributor) {
+      return res.status(403).json({ error: 'Distributor access denied' })
+    }
+
+    await prisma.claim.delete({ where: { id } })
+    res.status(204).send()
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to delete CSA claim' })
+  }
+})
+
+router.get('/claims/gst-summary', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId
+    const distributors = await prisma.distributor.findMany({
+      where: { csaId },
+      select: { id: true }
+    })
+    const distributorIds = distributors.map(d => d.id)
+
+    if (!distributorIds.length) {
+      return res.json([])
+    }
+
+    const dateRange = getDateRange(req.query)
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        OR: [
+          { csaId },
+          { createdById: csaId }
+        ],
+        distributorId: { in: distributorIds },
+        date: dateRange
+      },
+      include: { invoiceItems: true },
+      orderBy: { date: 'asc' }
+    })
+
+    const monthlyData = {}
+    invoices.forEach(invoice => {
+      const date = new Date(invoice.date)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' })
+
+      if (!monthlyData[key]) {
+        monthlyData[key] = {
+          month: monthName,
+          taxableValue: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          total: 0
+        }
+      }
+
+      const getNum = (val) => {
+        if (typeof val === 'number') return val
+        if (val?.toNumber) return val.toNumber()
+        return parseFloat(val)
+      }
+
+      monthlyData[key].taxableValue += getNum(invoice.taxableValue)
+      monthlyData[key].cgst += getNum(invoice.cgst)
+      monthlyData[key].sgst += getNum(invoice.sgst)
+      monthlyData[key].igst += getNum(invoice.igst)
+      monthlyData[key].total += getNum(invoice.grandTotal)
+    })
+
+    const gstReport = Object.values(monthlyData).sort((a, b) => {
+      const [yearA, monthA] = a.month.split(' ').reverse()
+      const [yearB, monthB] = b.month.split(' ').reverse()
+      return parseInt(yearA) - parseInt(yearB) || 
+        new Date(`${monthA} 1, ${yearA}`) - new Date(`${monthB} 1, ${yearB}`)
+    })
+
+    res.json(convertDecimals(gstReport))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch CSA GST summary' })
+  }
+})
 
 router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
   try {
@@ -58,15 +323,15 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
 
     const distributorsWithStats = await Promise.all(distributors.map(async (dist) => {
       const totalSalesAgg = await prisma.invoice.aggregate({
-        where: { distributorId: dist.id, date: whereDateRange },
+        where: { distributorId: dist.id, csaId: null, date: whereDateRange },
         _sum: { grandTotal: true }
       })
       const totalSalesReturnsAgg = await prisma.salesReturn.aggregate({
-        where: { distributorId: dist.id, date: whereDateRange },
+        where: { distributorId: dist.id, csaId: null, date: whereDateRange },
         _sum: { grandTotal: true }
       })
       const totalPaymentsInAgg = await prisma.paymentIn.aggregate({
-        where: { distributorId: dist.id, date: whereDateRange },
+        where: { distributorId: dist.id, csaId: null, date: whereDateRange },
         _sum: { amount: true }
       })
       const totalPurchaseReturnsAgg = await prisma.purchaseReturn.aggregate({
@@ -86,7 +351,7 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
       const totalPaymentsOut = totalPaymentsOutAgg._sum.amount || 0
       
       const invoiceCount = await prisma.invoice.count({
-        where: { distributorId: dist.id, date: whereDateRange }
+        where: { distributorId: dist.id, csaId: null, date: whereDateRange }
       })
       const partyCount = await prisma.party.count({
         where: { distributorId: dist.id }
@@ -98,10 +363,10 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
         where: { distributorId: dist.id, createdAt: whereDateRange }
       })
       const salesReturnCount = await prisma.salesReturn.count({
-        where: { distributorId: dist.id, date: whereDateRange }
+        where: { distributorId: dist.id, csaId: null, date: whereDateRange }
       })
       const paymentInCount = await prisma.paymentIn.count({
-        where: { distributorId: dist.id, date: whereDateRange }
+        where: { distributorId: dist.id, csaId: null, date: whereDateRange }
       })
       const purchaseReturnCount = await prisma.purchaseReturn.count({
         where: { distributorId: dist.id, date: whereDateRange }
@@ -110,6 +375,7 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
         where: { distributorId: dist.id, date: whereDateRange }
       })
       return {
+        id: dist.id,
         distributorId: dist.id,
         companyName: dist.companyName,
         ownerName: dist.ownerName,
@@ -164,7 +430,7 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
       whereDateRange.lte = end
     }
 
-    const distributor = await prisma.distributor.findUnique({
+    const distributor = await prisma.distributor.findFirst({
       where: { id, csaId },
       include: { users: true }
     })
@@ -174,15 +440,15 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
     }
 
     const totalSalesAgg = await prisma.invoice.aggregate({
-      where: { distributorId: id, date: whereDateRange },
+      where: { distributorId: id, csaId: null, date: whereDateRange },
       _sum: { grandTotal: true }
     })
     const totalSalesReturnsAgg = await prisma.salesReturn.aggregate({
-      where: { distributorId: id, date: whereDateRange },
+      where: { distributorId: id, csaId: null, date: whereDateRange },
       _sum: { grandTotal: true }
     })
     const totalPaymentsInAgg = await prisma.paymentIn.aggregate({
-      where: { distributorId: id, date: whereDateRange },
+      where: { distributorId: id, csaId: null, date: whereDateRange },
       _sum: { amount: true }
     })
     const totalPurchaseReturnsAgg = await prisma.purchaseReturn.aggregate({
@@ -205,7 +471,7 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
     const totalPaymentsOut = totalPaymentsOutAgg._sum.amount || 0
     
     const invoiceCount = await prisma.invoice.count({
-      where: { distributorId: id, date: whereDateRange }
+      where: { distributorId: id, csaId: null, date: whereDateRange }
     })
     const partyCount = await prisma.party.count({
       where: { distributorId: id }
@@ -217,10 +483,10 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
       where: { distributorId: id, createdAt: whereDateRange }
     })
     const salesReturnCount = await prisma.salesReturn.count({
-      where: { distributorId: id, date: whereDateRange }
+      where: { distributorId: id, csaId: null, date: whereDateRange }
     })
     const paymentInCount = await prisma.paymentIn.count({
-      where: { distributorId: id, date: whereDateRange }
+      where: { distributorId: id, csaId: null, date: whereDateRange }
     })
     const purchaseReturnCount = await prisma.purchaseReturn.count({
       where: { distributorId: id, date: whereDateRange }
@@ -233,7 +499,7 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
       where: { distributorId: id },
       include: {
         invoices: {
-          where: { distributorId: id, date: whereDateRange }
+          where: { distributorId: id, csaId: null, date: whereDateRange }
         }
       }
     })
@@ -254,14 +520,14 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
       where: { distributorId: id },
       include: {
         invoiceItems: {
-          where: { invoice: { distributorId: id, date: whereDateRange } },
+          where: { invoice: { distributorId: id, csaId: null, date: whereDateRange } },
           include: { invoice: true }
         }
       }
     })
 
     const invoices = await prisma.invoice.findMany({
-      where: { distributorId: id, date: whereDateRange },
+      where: { distributorId: id, csaId: null, date: whereDateRange },
       include: { party: true, invoiceItems: true },
       orderBy: { createdAt: 'desc' }
     })
@@ -272,13 +538,13 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
     })
 
     const salesReturns = await prisma.salesReturn.findMany({
-      where: { distributorId: id, date: whereDateRange },
+      where: { distributorId: id, csaId: null, date: whereDateRange },
       include: { party: true },
       orderBy: { createdAt: 'desc' }
     })
 
     const paymentsIn = await prisma.paymentIn.findMany({
-      where: { distributorId: id, date: whereDateRange },
+      where: { distributorId: id, csaId: null, date: whereDateRange },
       include: { party: true },
       orderBy: { createdAt: 'desc' }
     })
@@ -2266,7 +2532,10 @@ router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req,
     const distributors = await prisma.distributor.findMany({
       where: { csaId },
       include: {
-        invoices: { where: { date: { gte: start, lte: end } }, include: { invoiceItems: true } }
+        invoices: {
+          where: { csaId, date: { gte: start, lte: end } },
+          include: { invoiceItems: true }
+        }
       }
     })
 
@@ -2311,7 +2580,8 @@ router.get('/my-reports/product-sales', authenticateToken, requireCSA, async (re
         invoiceItems: { 
           where: { 
             invoice: { 
-              distributor: { csaId }, 
+              csaId,
+              distributor: { csaId },
               date: { gte: start, lte: end } 
             } 
           }, 
@@ -2369,7 +2639,7 @@ router.get('/my-reports/party-product-sales/:partyId', authenticateToken, requir
     }
 
     const invoices = await prisma.invoice.findMany({
-      where: { distributorId: partyId, date: { gte: start, lte: end } },
+      where: { distributorId: partyId, csaId, date: { gte: start, lte: end } },
       include: {
         invoiceItems: { include: { product: true } }
       },
@@ -2423,8 +2693,8 @@ router.get('/my-reports/inventory', authenticateToken, requireCSA, async (req, r
     const products = await prisma.product.findMany({
       where: { distributor: { csaId } },
       include: {
-        invoiceItems: { where: { invoice: { date: { gte: start, lte: end }, distributor: { csaId } } } },
-        purchaseItems: { where: { purchase: { date: { gte: start, lte: end }, distributor: { csaId } } } }
+        invoiceItems: { where: { invoice: { csaId, date: { gte: start, lte: end }, distributor: { csaId } } } },
+        purchaseItems: { where: { purchase: { csaId, date: { gte: start, lte: end }, distributor: { csaId } } } }
       }
     })
 
@@ -2478,41 +2748,66 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     start.setHours(0, 0, 0, 0)
     end.setHours(23, 59, 59, 999)
 
-    // Fetch all relevant data in parallel for the distributor
-    const [invoices, salesReturns, paymentsIn, paymentsOut, purchaseReturns] = await Promise.all([
+    // Fetch all relevant data in parallel for the distributor for the selected period and prior period
+    const [invoices, salesReturns, paymentsIn, paymentsOut, purchaseReturns, openingInvoices, openingSalesReturns, openingPaymentsIn, openingPaymentsOut, openingPurchaseReturns] = await Promise.all([
       prisma.invoice.findMany({
         where: { 
-          distributorId: partyId, 
+          distributorId: partyId,
+          csaId,
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
       }),
       prisma.salesReturn.findMany({
         where: { 
-          distributorId: partyId, 
+          distributorId: partyId,
+          csaId,
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
       }),
       prisma.paymentIn.findMany({
         where: { 
-          distributorId: partyId, 
+          distributorId: partyId,
+          csaId,
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
       }),
       prisma.paymentOut.findMany({
         where: { 
-          distributorId: partyId, 
+          distributorId: partyId,
+          csaId,
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
       }),
       prisma.purchaseReturn.findMany({
         where: { 
-          distributorId: partyId, 
+          distributorId: partyId,
+          csaId,
           date: { gte: start, lte: end }
         },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.invoice.findMany({
+        where: { distributorId: partyId, csaId, date: { lt: start } },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.salesReturn.findMany({
+        where: { distributorId: partyId, csaId, date: { lt: start } },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.paymentIn.findMany({
+        where: { distributorId: partyId, csaId, date: { lt: start } },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.paymentOut.findMany({
+        where: { distributorId: partyId, csaId, date: { lt: start } },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.purchaseReturn.findMany({
+        where: { distributorId: partyId, csaId, date: { lt: start } },
         orderBy: { date: 'asc' }
       })
     ])
@@ -2525,8 +2820,27 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
       return 0
     }
 
+    const openingDebit = openingInvoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0) +
+      openingPaymentsOut.reduce((sum, pout) => sum + getNum(pout.amount), 0)
+    const openingCredit = openingSalesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) +
+      openingPaymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0) +
+      openingPurchaseReturns.reduce((sum, pr) => sum + getNum(pr.grandTotal), 0)
+    const openingBalance = openingDebit - openingCredit
+
     // Combine and sort all ledger entries
     const ledgerEntries = []
+
+    if (openingBalance !== 0) {
+      ledgerEntries.push({
+        id: 'opening-balance',
+        date: start,
+        type: 'Opening Balance',
+        refNo: '-',
+        debit: openingBalance > 0 ? openingBalance : 0,
+        credit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
+        balance: 0
+      })
+    }
     
     // Add invoices (debit - party owes us)
     invoices.forEach(inv => {
@@ -2596,8 +2910,12 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date))
 
     // Calculate running balance
-    let runningBalance = 0
+    let runningBalance = openingBalance
     ledgerEntries.forEach(entry => {
+      if (entry.type === 'Opening Balance') {
+        entry.balance = runningBalance
+        return
+      }
       runningBalance += entry.debit - entry.credit
       entry.balance = runningBalance
     })
@@ -2608,14 +2926,17 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     const totalCredit = salesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) + 
                        paymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0) +
                        purchaseReturns.reduce((sum, pr) => sum + getNum(pr.grandTotal), 0)
-    const closingBalance = totalDebit - totalCredit
+    const periodNet = totalDebit - totalCredit
+    const closingBalance = openingBalance + periodNet
 
     res.json(convertDecimals({
       party: distributor,
       ledgerEntries,
       summary: {
+        openingBalance,
         totalDebit,
         totalCredit,
+        periodNet,
         closingBalance
       },
       dateRange: {

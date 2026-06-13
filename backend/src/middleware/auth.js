@@ -3,7 +3,7 @@ const prisma = require('../lib/prisma')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production'
 
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1]
 
@@ -11,10 +11,20 @@ const authenticateToken = (req, res, next) => {
     return res.sendStatus(401)
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) {
       return res.sendStatus(403)
     }
+
+    // Check if user is still active
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId }
+    })
+
+    if (!dbUser || dbUser.isActive === false) {
+      return res.sendStatus(403)
+    }
+
     req.user = user
     next()
   })

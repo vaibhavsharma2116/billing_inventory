@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Shield, Building2, ArrowRight, Calendar, Download, Users, Package, IndianRupee, RefreshCw, CreditCard, BarChart3, PieChart as PieChartIcon } from 'lucide-react'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js'
 import { Bar, Pie } from 'react-chartjs-2'
@@ -39,6 +40,7 @@ const getNum = (val) => {
 }
 
 export default function AdminDashboard({ view = 'dashboard' }) {
+  const navigate = useNavigate()
   const [currentView, setCurrentView] = useState(view)
   const [distributors, setDistributors] = useState([])
   const [csas, setCsas] = useState([])
@@ -445,8 +447,14 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                             <p className="text-xs text-gray-500">{csa.distributorCount} Distributors</p>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="flex items-center gap-3">
                           <p className="font-semibold text-green-600">₹{getNum(csa.totalRevenue).toLocaleString()}</p>
+                          <button
+                            onClick={() => navigate(`/admin/csa/${csa.csaId}`)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                          >
+                            View
+                          </button>
                         </div>
                       </div>
                     ))
@@ -565,9 +573,15 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                                 <h4 className="font-semibold text-gray-900">{csa.name}</h4>
                                 <p className="text-xs text-gray-600">{csa.email}</p>
                               </div>
-                              <span className="ml-auto text-xs font-semibold text-gray-700 bg-white px-2 py-1 rounded-full">
+                              <span className="ml-auto text-xs font-semibold text-gray-700 bg-white px-2 py-1 rounded-full mr-4">
                                 {(distributorsByCsa[csa.id] || []).length} Distributors
                               </span>
+                              <button
+                                onClick={() => navigate(`/admin/csa/${csa.id}`)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-xs font-medium"
+                              >
+                                View CSA
+                              </button>
                             </div>
                           </td>
                         </tr>

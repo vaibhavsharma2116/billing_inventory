@@ -7,6 +7,8 @@ const getAuthHeaders = () => {
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 
+const getPartyId = (party) => party?.id || party?.distributorId || party?.partyId
+
 function CSAReports() {
   const [activeTab, setActiveTab] = useState('party-sales')
   const [partySales, setPartySales] = useState([])
@@ -71,22 +73,41 @@ function CSAReports() {
     }
   }
 
-  useEffect(() => {
-    fetchPartySales()
-    fetchProductSales()
-    fetchInventoryReport()
-    if (selectedParty && activeTab === 'party-product') {
-      fetchPartyProductSales(selectedParty.id)
+  const getEffectiveDateRange = (startDate = '', endDate = '') => {
+    if (startDate || endDate) {
+      return {
+        start: startDate || null,
+        end: endDate || null
+      }
     }
-  }, [dateFilter, customStartDate, customEndDate])
+    return getDateRange(dateFilter)
+  }
 
   useEffect(() => {
     fetchParties()
   }, [])
 
+  useEffect(() => {
+    if (activeTab === 'party-ledger') {
+      if (selectedParty) {
+        fetchPartyLedger(getPartyId(selectedParty), ledgerStartDate, ledgerEndDate)
+      } else {
+        setPartyLedger(null)
+      }
+      return
+    }
+
+    fetchPartySales()
+    fetchProductSales()
+    fetchInventoryReport()
+    if (selectedParty && activeTab === 'party-product') {
+      fetchPartyProductSales(getPartyId(selectedParty))
+    }
+  }, [activeTab, dateFilter, customStartDate, customEndDate, selectedParty, ledgerStartDate, ledgerEndDate])
+
   const fetchPartySales = async () => {
     try {
-      const dateRange = getDateRange(dateFilter)
+      const dateRange = getEffectiveDateRange()
       let url = `${BASE_API_URL}/csa/my-reports/party-sales`
       const params = new URLSearchParams()
       if (dateRange.start) params.append('startDate', dateRange.start)
@@ -94,15 +115,17 @@ function CSAReports() {
       if (params.toString()) url += `?${params.toString()}`
 
       const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) throw new Error('Failed to fetch distributor sales')
       setPartySales(await res.json())
     } catch (err) {
-      console.error('Failed to fetch party sales')
+      console.error('Failed to fetch party sales', err)
+      setPartySales([])
     }
   }
 
   const fetchProductSales = async () => {
     try {
-      const dateRange = getDateRange(dateFilter)
+      const dateRange = getEffectiveDateRange()
       let url = `${BASE_API_URL}/csa/my-reports/product-sales`
       const params = new URLSearchParams()
       if (dateRange.start) params.append('startDate', dateRange.start)
@@ -110,24 +133,32 @@ function CSAReports() {
       if (params.toString()) url += `?${params.toString()}`
 
       const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) throw new Error('Failed to fetch product sales')
       setProductSales(await res.json())
     } catch (err) {
-      console.error('Failed to fetch product sales')
+      console.error('Failed to fetch product sales', err)
+      setProductSales([])
     }
   }
 
   const fetchParties = async () => {
     try {
       const res = await fetch(`${BASE_API_URL}/csa/distributors`, { headers: getAuthHeaders() })
-      setParties(await res.json())
+      if (!res.ok) throw new Error('Failed to fetch distributors')
+      const data = await res.json()
+      const normalizedParties = Array.isArray(data)
+        ? data.map(party => ({ ...party, id: getPartyId(party) }))
+        : []
+      setParties(normalizedParties)
     } catch (err) {
-      console.error('Failed to fetch distributors')
+      console.error('Failed to fetch distributors', err)
+      setParties([])
     }
   }
 
   const fetchInventoryReport = async () => {
     try {
-      const dateRange = getDateRange(dateFilter)
+      const dateRange = getEffectiveDateRange()
       let url = `${BASE_API_URL}/csa/my-reports/inventory`
       const params = new URLSearchParams()
       if (dateRange.start) params.append('startDate', dateRange.start)
@@ -135,16 +166,18 @@ function CSAReports() {
       if (params.toString()) url += `?${params.toString()}`
 
       const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) throw new Error('Failed to fetch inventory report')
       setInventoryReport(await res.json())
     } catch (err) {
-      console.error('Failed to fetch inventory report')
+      console.error('Failed to fetch inventory report', err)
+      setInventoryReport(null)
     }
   }
 
   const fetchPartyProductSales = async (partyId) => {
     try {
       setLoading(true)
-      const dateRange = getDateRange(dateFilter)
+      const dateRange = getEffectiveDateRange()
       let url = `${BASE_API_URL}/csa/my-reports/party-product-sales/${partyId}`
       const params = new URLSearchParams()
       if (dateRange.start) params.append('startDate', dateRange.start)
@@ -152,9 +185,11 @@ function CSAReports() {
       if (params.toString()) url += `?${params.toString()}`
 
       const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) throw new Error('Failed to fetch distributor product sales')
       setPartyProductSales(await res.json())
     } catch (err) {
-      console.error('Failed to fetch party product sales')
+      console.error('Failed to fetch party product sales', err)
+      setPartyProductSales([])
     } finally {
       setLoading(false)
     }
@@ -165,8 +200,9 @@ function CSAReports() {
       setLoading(true)
       let url = `${BASE_API_URL}/csa/my-reports/party-ledger/${partyId}`
       const params = new URLSearchParams()
-      if (startDate) params.append('startDate', startDate)
-      if (endDate) params.append('endDate', endDate)
+      const dateRange = getEffectiveDateRange(startDate, endDate)
+      if (dateRange.start) params.append('startDate', dateRange.start)
+      if (dateRange.end) params.append('endDate', dateRange.end)
       if (params.toString()) url += `?${params.toString()}`
       
       const res = await fetch(url, { headers: getAuthHeaders() })
@@ -180,16 +216,17 @@ function CSAReports() {
   }
 
   const handlePartySelect = (party) => {
+    const partyId = getPartyId(party)
     setSelectedParty(party)
     if (activeTab === 'party-product') {
-      if (party) {
-        fetchPartyProductSales(party.id)
+      if (partyId) {
+        fetchPartyProductSales(partyId)
       } else {
         setPartyProductSales([])
       }
     } else if (activeTab === 'party-ledger') {
-      if (party) {
-        fetchPartyLedger(party.id, ledgerStartDate, ledgerEndDate)
+      if (partyId) {
+        fetchPartyLedger(partyId, ledgerStartDate, ledgerEndDate)
       } else {
         setPartyLedger(null)
       }
@@ -197,8 +234,9 @@ function CSAReports() {
   }
 
   const handleLedgerRefresh = () => {
-    if (selectedParty) {
-      fetchPartyLedger(selectedParty.id, ledgerStartDate, ledgerEndDate)
+    const partyId = getPartyId(selectedParty)
+    if (partyId) {
+      fetchPartyLedger(partyId, ledgerStartDate, ledgerEndDate)
     }
   }
 
@@ -530,7 +568,11 @@ function CSAReports() {
                   </div>
 
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
+                      <div className="text-xs md:text-sm text-gray-500 mb-1">Opening Balance</div>
+                      <div className="text-2xl md:text-3xl font-bold text-gray-800">₹{partyLedger.summary.openingBalance.toFixed(2)}</div>
+                    </div>
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
                       <div className="text-xs md:text-sm text-gray-500 mb-1">Total Debit</div>
                       <div className="text-2xl md:text-3xl font-bold text-blue-600">₹{partyLedger.summary.totalDebit.toFixed(2)}</div>

@@ -209,7 +209,8 @@ const Sidebar = () => {
         { name: 'Payment Out', path: '/csa/my-payments-out', icon: CreditCard }
       ]
     },
-    { name: 'Reports', path: '/csa/reports', icon: FileBarChart2 }
+    { name: 'Reports', path: '/csa/reports', icon: FileBarChart2 },
+    { name: 'Claims', path: '/csa/claims', icon: AlertCircle }
   ]
 
   const distributorNavItems = [

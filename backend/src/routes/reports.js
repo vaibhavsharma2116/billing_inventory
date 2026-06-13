@@ -230,8 +230,8 @@ router.get('/party-ledger/:partyId', authenticateToken, requireDistributor, asyn
     start.setHours(0, 0, 0, 0)
     end.setHours(23, 59, 59, 999)
 
-    // Fetch all relevant data in parallel
-    const [invoices, salesReturns, paymentsIn] = await Promise.all([
+    // Fetch all relevant data in parallel for the selected period and prior period
+    const [invoices, salesReturns, paymentsIn, openingInvoices, openingSalesReturns, openingPaymentsIn] = await Promise.all([
       prisma.invoice.findMany({
         where: { 
           partyId, 
@@ -255,6 +255,30 @@ router.get('/party-ledger/:partyId', authenticateToken, requireDistributor, asyn
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
+      }),
+      prisma.invoice.findMany({
+        where: {
+          partyId,
+          distributorId: req.user.distributorId,
+          date: { lt: start }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.salesReturn.findMany({
+        where: {
+          partyId,
+          distributorId: req.user.distributorId,
+          date: { lt: start }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.paymentIn.findMany({
+        where: {
+          partyId,
+          distributorId: req.user.distributorId,
+          date: { lt: start }
+        },
+        orderBy: { date: 'asc' }
       })
     ])
 
@@ -266,8 +290,25 @@ router.get('/party-ledger/:partyId', authenticateToken, requireDistributor, asyn
       return 0
     }
 
+    const openingDebit = openingInvoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0)
+    const openingCredit = openingSalesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) +
+      openingPaymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0)
+    const openingBalance = openingDebit - openingCredit
+
     // Combine and sort all ledger entries
     const ledgerEntries = []
+
+    if (openingBalance !== 0) {
+      ledgerEntries.push({
+        id: 'opening-balance',
+        date: start,
+        type: 'Opening Balance',
+        refNo: '-',
+        debit: openingBalance > 0 ? openingBalance : 0,
+        credit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
+        balance: 0
+      })
+    }
     
     // Add invoices (debit - party owes us)
     invoices.forEach(inv => {
@@ -312,8 +353,12 @@ router.get('/party-ledger/:partyId', authenticateToken, requireDistributor, asyn
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date))
 
     // Calculate running balance
-    let runningBalance = 0
+    let runningBalance = openingBalance
     ledgerEntries.forEach(entry => {
+      if (entry.type === 'Opening Balance') {
+        entry.balance = runningBalance
+        return
+      }
       runningBalance += entry.debit - entry.credit
       entry.balance = runningBalance
     })
@@ -322,14 +367,17 @@ router.get('/party-ledger/:partyId', authenticateToken, requireDistributor, asyn
     const totalDebit = invoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0)
     const totalCredit = salesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) + 
                        paymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0)
-    const closingBalance = totalDebit - totalCredit
+    const periodNet = totalDebit - totalCredit
+    const closingBalance = openingBalance + periodNet
 
     res.json(convertDecimals({
       party,
       ledgerEntries,
       summary: {
+        openingBalance,
         totalDebit,
         totalCredit,
+        periodNet,
         closingBalance
       },
       dateRange: {

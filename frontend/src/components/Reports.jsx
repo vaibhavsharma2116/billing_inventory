@@ -531,7 +531,11 @@ function Reports() {
                   </div>
 
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
+                      <div className="text-xs md:text-sm text-gray-500 mb-1">Opening Balance</div>
+                      <div className="text-2xl md:text-3xl font-bold text-gray-800">₹{partyLedger.summary.openingBalance.toFixed(2)}</div>
+                    </div>
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
                       <div className="text-xs md:text-sm text-gray-500 mb-1">Total Debit</div>
                       <div className="text-2xl md:text-3xl font-bold text-blue-600">₹{partyLedger.summary.totalDebit.toFixed(2)}</div>

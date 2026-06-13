@@ -81,6 +81,11 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
   })
   const [editCsaLoading, setEditCsaLoading] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
+  // CSA specific states
+  const [selectedCsa, setSelectedCsa] = useState(null)
+  const [showCsaPasswordModal, setShowCsaPasswordModal] = useState(false)
+  const [changingAdminCsa, setChangingAdminCsa] = useState(null)
+  const [togglingCsaId, setTogglingCsaId] = useState(null)
   
   const [dateFilter, setDateFilter] = useState('')
   const [customStartDate, setCustomStartDate] = useState(
@@ -417,6 +422,136 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     }
   }
 
+  // CSA specific functions
+  const toggleCsaStatus = async (csaId, currentStatus) => {
+    try {
+      setTogglingCsaId(csaId)
+      const res = await fetch(`${API_URL}/superadmin/csas/${csaId}/toggle`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ isActive: !currentStatus })
+      })
+
+      if (res.ok) {
+        setCsas(prev => prev.map(c => 
+          c.id === csaId 
+            ? { ...c, isActive: !currentStatus } 
+            : c
+        ))
+        setCsaPerformance(prev => prev.map(c => 
+          c.csaId === csaId 
+            ? { ...c, isActive: !currentStatus } 
+            : c
+        ))
+      }
+    } catch (err) {
+      console.error('Failed to toggle CSA status:', err)
+    } finally {
+      setTogglingCsaId(null)
+    }
+  }
+
+  const handleChangeCsaPassword = async (e) => {
+    e.preventDefault()
+    if (!selectedCsa) return
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      alert('Passwords do not match')
+      return
+    }
+    if (passwordForm.newPassword.length < 6) {
+      alert('Password must be at least 6 characters long')
+      return
+    }
+    try {
+      setPasswordLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/csas/${selectedCsa.id}/change-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ newPassword: passwordForm.newPassword })
+      })
+      if (res.ok) {
+        alert('Password changed successfully')
+        setShowCsaPasswordModal(false)
+        setSelectedCsa(null)
+        setPasswordForm({ newPassword: '', confirmPassword: '' })
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to change password')
+      }
+    } catch (err) {
+      console.error('Failed to change password:', err)
+      alert('Failed to change password')
+    } finally {
+      setPasswordLoading(false)
+    }
+  }
+
+  const handleChangeCsaAdmin = async () => {
+    if (!changingAdminCsa) return
+    try {
+      setChangingAdminLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/csas/${changingAdminCsa.id}/change-admin`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ adminId: newAdminId || null })
+      })
+      if (res.ok) {
+        alert('Admin changed successfully')
+        setChangingAdminCsa(null)
+        setNewAdminId('')
+        fetchAllData()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to change admin')
+      }
+    } catch (err) {
+      console.error('Failed to change admin:', err)
+      alert('Failed to change admin')
+    } finally {
+      setChangingAdminLoading(false)
+    }
+  }
+
+  const downloadCsaReport = (csa) => {
+    const csaWithStats = csaPerformance.find(c => c.csaId === csa.id) || csa
+    const summaryHeaders = ['Metric', 'Value']
+    const summaryRows = [
+      ['Report Generated On', new Date().toLocaleString()],
+      ['Name', csaWithStats.name],
+      ['Email', csaWithStats.email],
+      ['Status', (csaWithStats.isActive !== false ? 'Active' : 'Suspended')],
+      ['', ''],
+      ['=== PERFORMANCE METRICS ===', ''],
+      ['Total Distributors', csaWithStats.distributorCount || 0],
+      ['Total Sales', `₹${getNum(csaWithStats.totalSales || 0).toLocaleString()}`],
+      ['Total Revenue', `₹${getNum(csaWithStats.totalRevenue || 0).toLocaleString()}`],
+      ['Total Payments Received', `₹${getNum(csaWithStats.totalPaymentsReceived || 0).toLocaleString()}`]
+    ]
+
+    let csvContent = ''
+    csvContent += '===== CSA PERFORMANCE REPORT =====\n'
+    csvContent += summaryHeaders.join(',') + '\n'
+    summaryRows.forEach(row => { csvContent += row.join(',') + '\n' })
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `${csaWithStats.name.replace(/\s+/g, '_')}_detailed_report_${new Date().toISOString().split('T')[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const handleChangeCSA = async () => {
     if (!changingCsaDistributor) return
     try {
@@ -655,6 +790,9 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     const activeCount = distributors.filter(d => d.isActive !== false).length
     const suspendedCount = distributors.length - activeCount
 
+    const activeCsaCount = csas.filter(c => c.isActive !== false).length
+    const suspendedCsaCount = csas.length - activeCsaCount
+
     // Calculate global stats from all distributors
     const totalParties = distributors.reduce((sum, d) => sum + (d.partyCount || 0), 0)
     const totalProducts = distributors.reduce((sum, d) => sum + (d.productCount || 0), 0)
@@ -673,6 +811,21 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
           data: [activeCount, suspendedCount],
           backgroundColor: [
             '#10B981',
+            '#EF4444'
+          ],
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }
+      ]
+    }
+
+    const csaStatusChartData = {
+      labels: ['Active', 'Suspended'],
+      datasets: [
+        {
+          data: [activeCsaCount, suspendedCsaCount],
+          backgroundColor: [
+            '#8B5CF6',
             '#EF4444'
           ],
           borderColor: '#ffffff',
@@ -826,6 +979,17 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
             </div>
           </div>
 
+          {/* Total Distributors */}
+          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-10 h-10 md:w-16 md:h-16 bg-green-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
+                <Building2 size={20} className="md:w-8 md:h-8 text-green-600" />
+              </div>
+              <p className="text-sm md:text-lg font-semibold text-gray-800">Total Distributors</p>
+              <p className="text-xl md:text-3xl font-bold text-green-600 mt-2">{loading ? '...' : distributors.length}</p>
+            </div>
+          </div>
+
           {/* Total Parties */}
           <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
             <div className="flex flex-col items-center text-center">
@@ -962,23 +1126,31 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                       {csa.gstin && <p className="text-xs text-gray-500">GSTIN: {csa.gstin}</p>}
                       {csa.city && <p className="text-xs text-gray-500">City: {csa.city}</p>}
                     </div>
-                    <button
-                      onClick={() => {
-                        setEditingCsa(csa)
-                        setEditCsaForm({
-                          name: csa.name,
-                          email: csa.email,
-                          adminId: csa.adminId || '',
-                          phone: csa.phone || '',
-                          gstin: csa.gstin || '',
-                          city: csa.city || '',
-                          password: ''
-                        })
-                      }}
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100 transition-all"
-                    >
-                      Edit
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/superadmin/csa/${csa.id}`)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingCsa(csa)
+                          setEditCsaForm({
+                            name: csa.name,
+                            email: csa.email,
+                            adminId: csa.adminId || '',
+                            phone: csa.phone || '',
+                            gstin: csa.gstin || '',
+                            city: csa.city || '',
+                            password: ''
+                          })
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100 transition-all"
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -1043,8 +1215,14 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                         <p className="text-xs text-gray-500">{csa.distributorCount} Distributors</p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="flex items-center gap-3">
                       <p className="font-semibold text-green-600">₹{getNum(csa.totalRevenue).toLocaleString()}</p>
+                      <button
+                        onClick={() => navigate(`/superadmin/csa/${csa.csaId}`)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                      >
+                        View
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1086,7 +1264,7 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
         </div>
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Distributor Sales Bar Chart */}
           <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
             <div className="flex items-center gap-2 mb-4">
@@ -1098,14 +1276,25 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
             </div>
           </div>
 
-          {/* Active vs Suspended Pie Chart */}
+          {/* Distributor Active vs Suspended Pie Chart */}
           <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
             <div className="flex items-center gap-2 mb-4">
               <PieChartIcon className="text-green-600" size={20} />
-              <h3 className="text-lg font-semibold text-gray-800">Active vs Suspended</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Distributor Status</h3>
             </div>
             <div className="h-64">
               <Pie data={statusChartData} options={pieChartOptions} />
+            </div>
+          </div>
+
+          {/* CSA Active vs Suspended Pie Chart */}
+          <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <PieChartIcon className="text-purple-600" size={20} />
+              <h3 className="text-lg font-semibold text-gray-800">CSA Status</h3>
+            </div>
+            <div className="h-64">
+              <Pie data={csaStatusChartData} options={pieChartOptions} />
             </div>
           </div>
         </div>
@@ -1322,43 +1511,87 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
           return (
             <React.Fragment key={`csa-section-${csaId}`}>
               <tr className="bg-gradient-to-r from-cyan-50 to-teal-50">
-                <td colSpan="6" className="px-6 py-3">
-                  <div className="flex items-center gap-2 pl-8">
-                    <div className="w-8 h-8 bg-gradient-to-br from-cyan-600 to-teal-700 rounded-full flex items-center justify-center">
+                <td className="px-6 py-4" style={{paddingLeft: '48px'}}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-cyan-600 to-teal-700 rounded-full flex items-center justify-center flex-shrink-0">
                       <Users size={16} className="text-white" />
                     </div>
-                    <div className="flex-1">
+                    <div>
                       <h4 className="font-semibold text-gray-900">{csa?.name}</h4>
                       <div className="flex flex-wrap gap-2">
-                        <p className="text-xs text-gray-600">{csa?.email}</p>
                         {csa?.phone && <p className="text-xs text-gray-600">Phone: {csa.phone}</p>}
                         {csa?.gstin && <p className="text-xs text-gray-600">GSTIN: {csa.gstin}</p>}
-                        {csa?.city && <p className="text-xs text-gray-600">City: {csa.city}</p>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-gray-700 bg-white px-2 py-1 rounded-full">
-                        {dists.length} Distributors
-                      </span>
-                      <button
-                        onClick={() => {
-                          setEditingCsa(csa)
-                          setEditCsaForm({
-                            name: csa.name,
-                            email: csa.email,
-                            adminId: csa.adminId || '',
-                            phone: csa.phone || '',
-                            gstin: csa.gstin || '',
-                            city: csa.city || '',
-                            password: ''
-                          })
-                        }}
-                        className="text-xs font-medium bg-cyan-100 text-cyan-700 px-2 py-1 rounded-full hover:bg-cyan-200 transition-all"
-                      >
-                        Edit
-                      </button>
-                    </div>
                   </div>
+                </td>
+                <td className="px-6 py-4"></td>
+                <td className="px-6 py-4">
+                  <span className="text-gray-700">{csa?.email}</span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-gray-700">{csa?.city}</span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                    csa?.isActive !== false 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {csa?.isActive !== false ? <CheckCircle2 size={12} /> : <Ban size={12} />}
+                    {csa?.isActive !== false ? 'Active' : 'Suspended'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => navigate(`/superadmin/csa/${csaId}`)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all flex items-center"
+                    title="View"
+                  >
+                    <Eye size={18} />
+                  </button>
+                  <button
+                    onClick={() => downloadCsaReport(csa)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-all flex items-center"
+                    title="Download Report"
+                  >
+                    <Download size={18} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedCsa(csa)
+                      setShowCsaPasswordModal(true)
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 transition-all flex items-center"
+                    title="Change Password"
+                  >
+                    <Key size={18} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setChangingAdminCsa(csa)
+                      setNewAdminId(csa.adminId || '')
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-yellow-50 text-yellow-700 hover:bg-yellow-100 transition-all flex items-center"
+                    title="Change Admin"
+                  >
+                    <Users size={18} />
+                  </button>
+                  <button
+                    onClick={() => toggleCsaStatus(csa.id, csa.isActive !== false)}
+                    disabled={togglingCsaId === csa.id}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      csa?.isActive !== false
+                        ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                        : 'bg-green-50 text-green-600 hover:bg-green-100'
+                    }`}
+                    title={csa?.isActive !== false ? 'Suspend CSA' : 'Activate CSA'}
+                  >
+                    {togglingCsaId === csa.id 
+                      ? '...' 
+                      : (csa?.isActive !== false ? <Ban size={18} /> : <CheckCircle2 size={18} />)
+                    }
+                  </button>
                 </td>
               </tr>
               {dists.map((dist, idx) => renderDistributorRow(dist, idx, 48))}
@@ -2085,6 +2318,134 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CSA Password Modal */}
+      {showCsaPasswordModal && selectedCsa && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">Change CSA Password</h2>
+              <button
+                onClick={() => setShowCsaPasswordModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleChangeCsaPassword} className="space-y-4">
+                <div>
+                  <p className="text-gray-700 mb-4">
+                    CSA: <span className="font-semibold">{selectedCsa.name}</span>
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="Enter new password"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="Confirm new password"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCsaPasswordModal(false)}
+                    className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={passwordLoading}
+                    className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-500 to-teal-600 text-white hover:from-cyan-600 hover:to-teal-700 disabled:opacity-50 rounded-xl font-medium transition"
+                  >
+                    {passwordLoading ? 'Changing...' : 'Change Password'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change CSA Admin Modal */}
+      {changingAdminCsa && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">Change CSA Admin</h2>
+              <button
+                onClick={() => {
+                  setChangingAdminCsa(null)
+                  setNewAdminId('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-gray-700">
+                  CSA: <span className="font-semibold">{changingAdminCsa.name}</span>
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Admin</label>
+                <select
+                  value={newAdminId}
+                  onChange={(e) => setNewAdminId(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="">Unassigned</option>
+                  {admins.map(admin => (
+                    <option key={admin.id} value={admin.id}>{admin.name} ({admin.email})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChangingAdminCsa(null)
+                    setNewAdminId('')
+                  }}
+                  className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Are you sure you want to change the admin for this CSA?')) {
+                      handleChangeCsaAdmin()
+                    }
+                  }}
+                  disabled={changingAdminLoading}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-500 to-teal-600 text-white hover:from-cyan-600 hover:to-teal-700 disabled:opacity-50 rounded-xl font-medium transition"
+                >
+                  {changingAdminLoading ? 'Changing...' : 'Change Admin'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

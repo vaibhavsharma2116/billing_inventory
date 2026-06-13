@@ -6,7 +6,7 @@ const { authenticateToken, requireDistributor } = require('../middleware/auth')
 const convertDecimals = (obj, keyName) => {
   if (!obj) return obj
   // Skip converting phone numbers, names, gstins, addresses, dates, etc.
-  if (['phone', 'name', 'gstin', 'address', 'id', 'invoiceNo', 'batchNo', 'hsn', 'sku', 'brandName', 'claimDetails', 'status', 'date', 'createdAt', 'updatedAt', 'expiryDate', 'distributorId'].includes(keyName)) {
+  if (['phone', 'name', 'gstin', 'address', 'id', 'invoiceNo', 'batchNo', 'hsn', 'sku', 'brandName', 'claimDetails', 'status', 'date', 'createdAt', 'updatedAt', 'expiryDate', 'distributorId', 'createdByRole', 'createdByUserId'].includes(keyName)) {
     return obj
   }
   if (typeof obj === 'string' && !isNaN(obj) && obj.trim() !== '') {
@@ -96,7 +96,9 @@ router.post('/', authenticateToken, requireDistributor, async (req, res) => {
         claimDetails,
         amount: parseFloat(amount),
         status: status || 'PENDING',
-        distributorId: req.user.distributorId
+        distributorId: req.user.distributorId,
+        createdByRole: 'DISTRIBUTOR',
+        createdByUserId: req.user.userId || req.user.distributorId
       }
     })
     res.status(201).json(convertDecimals(claim))
@@ -123,7 +125,9 @@ router.put('/:id', authenticateToken, requireDistributor, async (req, res) => {
         brandName,
         claimDetails,
         amount: parseFloat(amount),
-        status
+        status,
+        createdByRole: existingClaim.createdByRole || 'DISTRIBUTOR',
+        createdByUserId: existingClaim.createdByUserId || (req.user.userId || req.user.distributorId)
       }
     })
     res.json(convertDecimals(claim))
