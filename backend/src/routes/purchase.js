@@ -328,9 +328,11 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
 
     const totalAmount = items.reduce((sum, item) => sum + (item.costPrice * item.quantity), 0)
     
+    const supplierId = req.body.supplierId || null
     const purchaseLedger = await prisma.purchaseLedger.create({
       data: {
         supplierName,
+        supplierId,
         invoiceNo: `PUR-${Date.now()}`,
         totalAmount,
         distributorId: req.user.distributorId
@@ -470,33 +472,63 @@ router.get('/', authenticateToken, requireDistributor, async (req, res) => {
 
 router.get('/suppliers', authenticateToken, requireDistributor, async (req, res) => {
   try {
-    const [purchases, purchaseReturns, paymentsOut] = await Promise.all([
-      prisma.purchaseLedger.findMany({
-        where: { distributorId: req.user.distributorId },
-        select: { supplierName: true },
-        distinct: ['supplierName']
-      }),
-      prisma.purchaseReturn.findMany({
-        where: { distributorId: req.user.distributorId },
-        select: { supplierName: true },
-        distinct: ['supplierName']
-      }),
-      prisma.paymentOut.findMany({
-        where: { distributorId: req.user.distributorId },
-        select: { supplierName: true },
-        distinct: ['supplierName']
+    // Get distributor's CSA
+    const distributor = await prisma.distributor.findFirst({
+      where: { id: req.user.distributorId },
+      include: { csa: { select: { id: true, name: true } } }
+    })
+    
+    const suppliers = await prisma.supplier.findMany({
+      where: { distributorId: req.user.distributorId },
+      orderBy: { createdAt: 'desc' }
+    })
+    
+    // Create a list with CSA first
+    const supplierList = []
+    
+    // Add CSA as first supplier if exists
+    if (distributor?.csa) {
+      supplierList.push({
+        id: null, // CSA is not a supplier record yet
+        name: distributor.csa.name,
+        isCsa: true
       })
-    ])
+    }
     
-    const allSupplierNames = [
-      ...purchases.map(p => p.supplierName),
-      ...purchaseReturns.map(p => p.supplierName),
-      ...paymentsOut.map(p => p.supplierName)
-    ]
+    // Add other suppliers
+    supplierList.push(...suppliers)
     
-    // Remove duplicates and filter out falsy values
-    const uniqueSupplierNames = [...new Set(allSupplierNames)].filter(Boolean)
-    res.json(uniqueSupplierNames)
+    // If no suppliers and no CSA, fall back to old behavior
+    if (supplierList.length === 0) {
+      const [purchases, purchaseReturns, paymentsOut] = await Promise.all([
+        prisma.purchaseLedger.findMany({
+          where: { distributorId: req.user.distributorId },
+          select: { supplierName: true },
+          distinct: ['supplierName']
+        }),
+        prisma.purchaseReturn.findMany({
+          where: { distributorId: req.user.distributorId },
+          select: { supplierName: true },
+          distinct: ['supplierName']
+        }),
+        prisma.paymentOut.findMany({
+          where: { distributorId: req.user.distributorId },
+          select: { supplierName: true },
+          distinct: ['supplierName']
+        })
+      ])
+      
+      const allSupplierNames = [
+        ...purchases.map(p => p.supplierName),
+        ...purchaseReturns.map(p => p.supplierName),
+        ...paymentsOut.map(p => p.supplierName)
+      ]
+      
+      const uniqueSupplierNames = [...new Set(allSupplierNames)].filter(Boolean)
+      return res.json(uniqueSupplierNames.map(name => ({ id: null, name })))
+    }
+    
+    res.json(convertDecimals(supplierList))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Failed to fetch suppliers' })

@@ -56,18 +56,26 @@ function Purchase() {
   const fetchSuppliers = async () => {
     try {
       const res = await fetch(`${PURCHASE_API_URL}/suppliers`, { headers: getAuthHeaders() })
-      setSuppliers(await res.json())
+      const data = await res.json()
+      setSuppliers(data)
+      // Set default supplier to first one (which is CSA)
+      if (data.length > 0) {
+        const firstSupplier = data[0]
+        setSupplierName(typeof firstSupplier === 'string' ? firstSupplier : firstSupplier.name)
+      }
     } catch (err) {
       console.error('Failed to fetch suppliers')
     }
   }
 
-  const filteredSuppliers = suppliers.filter(s => 
-    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
-  )
+  const filteredSuppliers = suppliers.filter(s => {
+    const name = typeof s === 'string' ? s : s.name
+    return name.toLowerCase().includes(supplierName.toLowerCase())
+  })
 
   const selectSupplier = (supplier) => {
-    setSupplierName(supplier)
+    const name = typeof supplier === 'string' ? supplier : supplier.name
+    setSupplierName(name)
     setShowSupplierDropdown(false)
   }
 
@@ -123,6 +131,7 @@ function Purchase() {
       console.log('Upload response:', data)
       if (!response.ok) throw new Error(data.error || data.message || 'Upload failed')
       setResult(data)
+      setFile(null) // Clear the file after successful processing
       fetchPurchases()
       fetchSuppliers() // Refresh suppliers list
     } catch (err) {
@@ -212,15 +221,24 @@ function Purchase() {
           />
           {showSupplierDropdown && filteredSuppliers.length > 0 && (
             <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-              {filteredSuppliers.map((supplier, index) => (
-                <div
-                  key={index}
-                  onClick={() => selectSupplier(supplier)}
-                  className="px-4 py-3 hover:bg-blue-50 cursor-pointer"
-                >
-                  <div className="font-medium text-gray-800">{supplier}</div>
-                </div>
-              ))}
+              {filteredSuppliers.map((supplier, index) => {
+                const name = typeof supplier === 'string' ? supplier : supplier.name
+                const isCsa = typeof supplier !== 'string' && supplier.isCsa
+                return (
+                  <div
+                    key={index}
+                    onClick={() => selectSupplier(supplier)}
+                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium text-gray-800">{name}</div>
+                      {isCsa && (
+                        <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded">CSA</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

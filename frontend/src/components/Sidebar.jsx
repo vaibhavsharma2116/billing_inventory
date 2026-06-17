@@ -176,6 +176,7 @@ const Sidebar = () => {
     { name: 'Distributor Directory', path: '/superadmin/directory', icon: Building2 },
     { name: 'Finance Ledger', path: '/superadmin/finance-ledger', icon: IndianRupee },
     { name: 'Inventory & Products', path: '/superadmin/inventory', icon: Package },
+    { name: 'Suppliers', path: '/superadmin/suppliers', icon: Users },
     { name: 'Create User', path: '/superadmin/create', icon: UserPlus }
   ]
 

@@ -41,6 +41,7 @@ import CSAMyPaymentsOut from './components/CSAMyPaymentsOut'
 import CSAReports from './components/CSAReports'
 import CSAClaims from './components/CSAClaims'
 import SuperAdminProducts from './components/SuperAdminProducts'
+import SuperAdminSuppliers from './components/SuperAdminSuppliers'
 import { useEffect } from 'react'
 
 const isAuthenticated = () => {
@@ -146,6 +147,7 @@ function App() {
                   <Route path="/superadmin/create" element={<SuperAdminDashboard view="create" />} />
                   <Route path="/superadmin/finance-ledger" element={<FinanceLedger />} />
                   <Route path="/superadmin/inventory" element={<SuperAdminProducts />} />
+                  <Route path="/superadmin/suppliers" element={<SuperAdminSuppliers />} />
                   <Route path="/superadmin/distributor/:distributorId" element={<DistributorDetails />} />
                   <Route path="/superadmin/csa/:csaId" element={<SuperAdminCSADetails />} />
                   <Route path="/admin/dashboard" element={<AdminDashboard view="dashboard" />} />

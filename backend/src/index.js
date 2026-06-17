@@ -29,6 +29,7 @@ const salesReturnsRouter = require('./routes/salesReturns')
 const paymentsInRouter = require('./routes/paymentsIn')
 const purchaseReturnsRouter = require('./routes/purchaseReturns')
 const paymentsOutRouter = require('./routes/paymentsOut')
+const suppliersRouter = require('./routes/suppliers')
 
 app.use('/api/parties', partiesRouter)
 app.use('/api/products', productsRouter)
@@ -45,6 +46,7 @@ app.use('/api/sales-returns', salesReturnsRouter)
 app.use('/api/payments-in', paymentsInRouter)
 app.use('/api/purchase-returns', purchaseReturnsRouter)
 app.use('/api/payments-out', paymentsOutRouter)
+app.use('/api/suppliers', suppliersRouter)
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`)

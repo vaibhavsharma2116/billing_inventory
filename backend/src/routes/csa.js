@@ -1119,6 +1119,17 @@ router.get('/distributors/:distributorId/purchase/suppliers', authenticateToken,
       return res.status(404).json({ error: 'Distributor not found or access denied' })
     }
 
+    // First check the supplier table
+    const suppliers = await prisma.supplier.findMany({
+      where: { distributorId },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    if (suppliers.length > 0) {
+      return res.json(convertDecimals(suppliers))
+    }
+
+    // Fall back to old behavior
     const [purchases, purchaseReturns, paymentsOut] = await Promise.all([
       prisma.purchaseLedger.findMany({
         where: { distributorId },
@@ -1144,7 +1155,7 @@ router.get('/distributors/:distributorId/purchase/suppliers', authenticateToken,
     ]
     
     const uniqueSupplierNames = [...new Set(allSupplierNames)].filter(Boolean)
-    res.json(uniqueSupplierNames)
+    res.json(uniqueSupplierNames.map(name => ({ id: null, name })))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Failed to fetch suppliers' })
@@ -1174,6 +1185,7 @@ router.post('/distributors/:distributorId/purchase/upload', authenticateToken, r
     }
 
     const supplierName = req.body.supplierName || 'Supplier'
+    const supplierId = req.body.supplierId || null
     
     let items = []
     let jsonDataWithHeaders = []
@@ -1425,6 +1437,7 @@ router.post('/distributors/:distributorId/purchase/upload', authenticateToken, r
     const purchaseLedger = await prisma.purchaseLedger.create({
       data: {
         supplierName,
+        supplierId,
         invoiceNo: `PUR-${Date.now()}`,
         totalAmount,
         distributorId
@@ -2270,32 +2283,22 @@ router.get('/my-purchases', authenticateToken, requireCSA, async (req, res) => {
 router.get('/my-suppliers', authenticateToken, requireCSA, async (req, res) => {
   try {
     const csaId = req.user.userId
-    const [purchases, purchaseReturns, paymentsOut] = await Promise.all([
-      prisma.purchaseLedger.findMany({
-        where: { csaId },
-        select: { supplierName: true },
-        distinct: ['supplierName']
-      }),
-      prisma.purchaseReturn.findMany({
-        where: { csaId },
-        select: { supplierName: true },
-        distinct: ['supplierName']
-      }),
-      prisma.paymentOut.findMany({
-        where: { csaId },
-        select: { supplierName: true },
-        distinct: ['supplierName']
-      })
-    ])
     
-    const allSupplierNames = [
-      ...purchases.map(p => p.supplierName),
-      ...purchaseReturns.map(p => p.supplierName),
-      ...paymentsOut.map(p => p.supplierName)
-    ]
+    // Get suppliers that are either:
+    // 1. Directly linked to this CSA, OR
+    // 2. Marked as isForAllCSAs
+    const suppliers = await prisma.supplier.findMany({
+      where: {
+        OR: [
+          { csaId },
+          { isForAllCSAs: true }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    })
     
-    const uniqueSupplierNames = [...new Set(allSupplierNames)].filter(Boolean)
-    res.json(uniqueSupplierNames)
+    // Return the suppliers
+    res.json(convertDecimals(suppliers))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Failed to fetch suppliers' })
@@ -2317,6 +2320,7 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
     filePath = req.file.path;
 
     const supplierName = req.body.supplierName || 'Supplier'
+    const supplierId = req.body.supplierId || null
     
     let items = []
     let jsonDataWithHeaders = []
@@ -2600,6 +2604,7 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
     const purchaseLedger = await prisma.purchaseLedger.create({
       data: {
         supplierName,
+        supplierId,
         invoiceNo: `PUR-${Date.now()}`,
         totalAmount,
         csaId

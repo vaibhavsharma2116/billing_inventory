@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
@@ -11,8 +11,7 @@ const getAuthHeaders = () => {
 function CSAMyPurchase() {
   const [purchases, setPurchases] = useState([])
   const [suppliers, setSuppliers] = useState([])
-  const [supplierName, setSupplierName] = useState('')
-  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
+  const [selectedSupplier, setSelectedSupplier] = useState({ id: null, name: '' })
   const [dragActive, setDragActive] = useState(false)
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -30,8 +29,6 @@ function CSAMyPurchase() {
     gstPercentage: '',
     currentStock: '0'
   })
-
-  const supplierDropdownRef = useRef(null)
 
   useEffect(() => {
     fetchPurchases()
@@ -53,20 +50,14 @@ function CSAMyPurchase() {
     try {
       const res = await fetch(`${API_URL}/csa/my-suppliers`, { headers: getAuthHeaders() })
       if (res.ok) {
-        setSuppliers(await res.json())
+        const data = await res.json()
+        // Convert to array of objects with id and name if needed
+        const formattedSuppliers = data.map(s => typeof s === 'string' ? { id: null, name: s } : s)
+        setSuppliers(formattedSuppliers)
       }
     } catch (err) {
       console.error('Failed to fetch suppliers:', err)
     }
-  }
-
-  const filteredSuppliers = suppliers.filter(s => 
-    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
-  )
-
-  const selectSupplier = (supplier) => {
-    setSupplierName(supplier)
-    setShowSupplierDropdown(false)
   }
 
   const handleDrag = (e) => {
@@ -108,8 +99,11 @@ function CSAMyPurchase() {
       setError('')
       const formData = new FormData()
       formData.append('file', file)
-      if (supplierName) {
-        formData.append('supplierName', supplierName)
+      if (selectedSupplier.name) {
+        formData.append('supplierName', selectedSupplier.name)
+      }
+      if (selectedSupplier.id) {
+        formData.append('supplierId', selectedSupplier.id)
       }
       const res = await fetch(`${API_URL}/csa/my-purchases/upload`, {
         method: 'POST',
@@ -119,6 +113,7 @@ function CSAMyPurchase() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || data.message || 'Upload failed')
       setResult(data)
+      setFile(null) // Clear the file after successful processing
       fetchPurchases()
       fetchSuppliers()
     } catch (err) {
@@ -187,30 +182,26 @@ function CSAMyPurchase() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
         <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Upload Supplier Invoice</h2>
         
-        {/* Supplier Name Input */}
-        <div className="mb-4 relative" ref={supplierDropdownRef}>
+        {/* Supplier Select Dropdown */}
+        <div className="mb-4">
           <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Supplier Name</label>
-          <input
-            type="text"
-            placeholder="Enter supplier name"
-            value={supplierName}
-            onChange={(e) => { setSupplierName(e.target.value); setShowSupplierDropdown(true) }}
-            onFocus={() => setShowSupplierDropdown(true)}
+          <select
+            value={selectedSupplier.id || ''}
+            onChange={(e) => {
+              const supplier = suppliers.find(s => s.id === e.target.value);
+              if (supplier) {
+                setSelectedSupplier(supplier);
+              } else {
+                setSelectedSupplier({ id: null, name: '' });
+              }
+            }}
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {showSupplierDropdown && filteredSuppliers.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-              {filteredSuppliers.map((supplier, index) => (
-                <div
-                  key={index}
-                  onClick={() => selectSupplier(supplier)}
-                  className="px-4 py-3 hover:bg-blue-50 cursor-pointer"
-                >
-                  <div className="font-medium text-gray-800">{supplier}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          >
+            <option value="">Select a supplier</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+            ))}
+          </select>
         </div>
         
         <div
