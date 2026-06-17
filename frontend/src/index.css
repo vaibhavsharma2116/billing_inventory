@@ -15,3 +15,52 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@media print {
+  /* Better approach for printing modal content */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  .print-content,
+  .print-content * {
+    visibility: visible !important;
+  }
+  
+  /* Position the content properly */
+  .print-content {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: white !important;
+    padding: 20px !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  /* Hide modal header buttons when printing */
+  .print-content .border-b button {
+    display: none !important;
+  }
+  
+  /* Hide scrollbars and ensure full content is printed */
+  .print-content .overflow-x-auto,
+  .print-content .overflow-y-auto {
+    overflow: visible !important;
+  }
+  
+  /* Adjust table for better print */
+  .print-content table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  
+  .print-content th,
+  .print-content td {
+    border: 1px solid #e5e7eb !important;
+  }
+}

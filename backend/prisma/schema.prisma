@@ -187,7 +187,7 @@ model InvoiceItem {
   invoiceId           String
   invoice             Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   productId           String
-  product             Product    @relation(fields: [productId], references: [id])
+  product             Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
   distributorId       String?
   distributor         Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId               String?
@@ -223,7 +223,7 @@ model PurchaseItem {
   purchaseId   String
   purchase     PurchaseLedger  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   productId    String
-  product      Product         @relation(fields: [productId], references: [id])
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   distributorId String?
   distributor  Distributor?    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId        String?
@@ -283,7 +283,7 @@ model SalesReturnItem {
   salesReturnId    String
   salesReturn      SalesReturn    @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
   productId        String
-  product          Product        @relation(fields: [productId], references: [id])
+  product          Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
   distributorId    String?
   distributor      Distributor?   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId            String?
@@ -341,7 +341,7 @@ model PurchaseReturnItem {
   purchaseReturnId   String
   purchaseReturn     PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
   productId          String
-  product            Product        @relation(fields: [productId], references: [id])
+  product            Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
   distributorId      String?
   distributor        Distributor?   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId              String?

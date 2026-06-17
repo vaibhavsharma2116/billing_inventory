@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, RefreshCw } from 'lucide-react'
 
 const BASE_API_URL = import.meta.env.VITE_API_URL
 const API_URL = `${BASE_API_URL}/csa/my-products`
@@ -156,13 +156,23 @@ function CSAMyProducts() {
     <div className="p-4 md:p-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-800">My Products</h1>
-        <button
-          onClick={openAddModal}
-          className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
-        >
-          <Plus size={20} />
-          Add New Product
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={fetchProducts}
+            disabled={loading}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2 disabled:opacity-50"
+          >
+            <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <button
+            onClick={openAddModal}
+            className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Add New Product
+          </button>
+        </div>
       </div>
 
       {error && (

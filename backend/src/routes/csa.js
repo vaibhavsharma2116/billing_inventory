@@ -882,6 +882,232 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
   }
 })
 
+// CSA Invoice Detail Endpoint
+router.get('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const csaId = req.user.userId
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { distributor: true, invoiceItems: { include: { product: true } } }
+    })
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' })
+    }
+
+    if (invoice.createdById !== csaId) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    res.json(convertDecimals(invoice))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch invoice' })
+  }
+})
+
+// CSA Update Invoice Endpoint
+router.put('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { items, isInterState } = req.body
+    const csaId = req.user.userId
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'Items are required' })
+    }
+
+    const existingInvoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { invoiceItems: true }
+    })
+
+    if (!existingInvoice) {
+      return res.status(404).json({ error: 'Invoice not found' })
+    }
+
+    if (existingInvoice.createdById !== csaId) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    // Check if invoice is older than 3 days
+    const invoiceDate = new Date(existingInvoice.createdAt)
+    const now = new Date()
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
+    if (invoiceDate < threeDaysAgo) {
+      return res.status(400).json({ error: 'Invoice cannot be edited after 3 days' })
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // First, restore old stock
+      for (const oldItem of existingInvoice.invoiceItems) {
+        await tx.product.update({
+          where: { id: oldItem.productId },
+          data: { currentStock: { increment: oldItem.qty } }
+        })
+      }
+
+      // Subtract old grand total from distributor financials
+      await tx.distributor.update({
+        where: { id: existingInvoice.distributorId },
+        data: {
+          totalAmountRealized: { decrement: getNum(existingInvoice.grandTotal) },
+          pendingCompanyBalance: { increment: getNum(existingInvoice.grandTotal) }
+        }
+      })
+
+      // Delete old invoice items
+      await tx.invoiceItem.deleteMany({
+        where: { invoiceId: id }
+      })
+
+      // Now process new items
+      let totalTaxable = 0
+      let totalCGST = 0
+      let totalSGST = 0
+      let totalIGST = 0
+      let productsData = []
+      let invoiceStockCost = 0
+
+      for (const item of items) {
+        const product = await tx.product.findUnique({
+          where: { id: item.productId }
+        })
+        if (!product) {
+          throw new Error(`Product not found: ${item.productId}`)
+        }
+        if (product.currentStock < item.qty) {
+          throw new Error(`Insufficient stock for product: ${product.name}`)
+        }
+
+        const itemStockCost = item.qty * getNum(product.costPrice)
+        invoiceStockCost += itemStockCost
+
+        productsData.push({ ...item, product, itemStockCost })
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { currentStock: { decrement: item.qty } }
+        })
+      }
+
+      const invoiceItemsData = productsData.map(({ product, qty, rate, gstPercentage, extraMarginPercentage }) => ({
+        productId: product.id,
+        qty,
+        costPrice: product.costPrice,
+        rate,
+        gstPercentage,
+        extraMarginPercentage: extraMarginPercentage || 0,
+        total: (qty * rate) + ((qty * rate * gstPercentage) / 100),
+        distributorId: existingInvoice.distributorId,
+        csaId
+      }))
+
+      for (const item of items) {
+        const taxable = item.qty * item.rate
+        totalTaxable += taxable
+        const gstAmount = (taxable * item.gstPercentage) / 100
+        if (isInterState) {
+          totalIGST += gstAmount
+        } else {
+          totalCGST += gstAmount / 2
+          totalSGST += gstAmount / 2
+        }
+      }
+
+      const grandTotal = totalTaxable + totalCGST + totalSGST + totalIGST
+
+      // Update the invoice
+      const invoice = await tx.invoice.update({
+        where: { id },
+        data: {
+          taxableValue: totalTaxable,
+          cgst: totalCGST,
+          sgst: totalSGST,
+          igst: totalIGST,
+          grandTotal,
+          invoiceItems: {
+            create: invoiceItemsData
+          }
+        },
+        include: { party: true, invoiceItems: { include: { product: true } } }
+      })
+
+      // Update distributor financials with new grand total
+      await tx.distributor.update({
+        where: { id: existingInvoice.distributorId },
+        data: {
+          totalAmountRealized: { increment: grandTotal },
+          pendingCompanyBalance: { decrement: grandTotal }
+        }
+      })
+
+      return invoice
+    })
+
+    res.json(convertDecimals(result))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: error.message || 'Failed to edit invoice' })
+  }
+})
+
+// CSA Delete Invoice Endpoint
+router.delete('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const csaId = req.user.userId
+
+    const existingInvoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { invoiceItems: true }
+    })
+
+    if (!existingInvoice) {
+      return res.status(404).json({ error: 'Invoice not found' })
+    }
+
+    if (existingInvoice.createdById !== csaId) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Restore stock
+      for (const item of existingInvoice.invoiceItems) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { currentStock: { increment: item.qty } }
+        })
+      }
+
+      // Update distributor financials
+      await tx.distributor.update({
+        where: { id: existingInvoice.distributorId },
+        data: {
+          totalAmountRealized: { decrement: getNum(existingInvoice.grandTotal) },
+          pendingCompanyBalance: { increment: getNum(existingInvoice.grandTotal) }
+        }
+      })
+
+      // Delete invoice items first
+      await tx.invoiceItem.deleteMany({
+        where: { invoiceId: id }
+      })
+
+      // Now delete the invoice
+      await tx.invoice.delete({
+        where: { id }
+      })
+    })
+
+    res.status(204).send()
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to delete invoice' })
+  }
+})
+
 // CSA Sales Returns Endpoints
 router.get('/distributors/:distributorId/sales-returns', authenticateToken, requireCSA, async (req, res) => {
   try {
@@ -1794,11 +2020,14 @@ router.get('/my-reports/product-sales', authenticateToken, requireCSA, async (re
       select: { id: true }
     })).map(d => d.id)
 
-    // Query invoice items directly (across all products linked to our distributors)
+    // Query invoice items directly (including both distributor-linked and CSA-created invoices)
     const invoiceItems = await prisma.invoiceItem.findMany({
       where: {
         invoice: {
-          distributorId: { in: distributorIds },
+          OR: [
+            { distributorId: { in: distributorIds } },
+            { createdById: csaId }
+          ],
           date: dateFilter
         }
       },
@@ -2728,6 +2957,63 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
   }
 })
 
+// Get single purchase
+router.get('/my-purchases/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const csaId = req.user.userId
+    const purchase = await prisma.purchaseLedger.findUnique({
+      where: { id },
+      include: { purchaseItems: { include: { product: true } } }
+    })
+    if (!purchase) {
+      return res.status(404).json({ error: 'Purchase not found' })
+    }
+    if (purchase.csaId !== csaId) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+    res.json(convertDecimals(purchase))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch purchase' })
+  }
+})
+
+// Delete purchase
+router.delete('/my-purchases/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const csaId = req.user.userId
+    const existingPurchase = await prisma.purchaseLedger.findUnique({
+      where: { id },
+      include: { purchaseItems: true }
+    })
+    if (!existingPurchase) {
+      return res.status(404).json({ error: 'Purchase not found' })
+    }
+    if (existingPurchase.csaId !== csaId) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+    await prisma.$transaction(async (tx) => {
+      // Restore stock
+      for (const item of existingPurchase.purchaseItems) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { currentStock: { decrement: item.qty } }
+        })
+      }
+      // Delete purchase items first
+      await tx.purchaseItem.deleteMany({ where: { purchaseId: id } })
+      // Delete purchase ledger
+      await tx.purchaseLedger.delete({ where: { id } })
+    })
+    res.status(204).send()
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to delete purchase' })
+  }
+})
+
 // CSA's own products
 router.get('/my-products', authenticateToken, requireCSA, async (req, res) => {
   try {
@@ -2866,7 +3152,7 @@ router.get('/my-invoices', authenticateToken, requireCSA, async (req, res) => {
     const invoices = await prisma.invoice.findMany({
       where: { csaId },
       include: { 
-        party: true, 
+        distributor: true, 
         invoiceItems: { include: { product: true } }
       },
       orderBy: { createdAt: 'desc' }

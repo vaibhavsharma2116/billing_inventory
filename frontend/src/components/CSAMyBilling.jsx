@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27' // Maharashtra as default
@@ -11,6 +11,8 @@ const getAuthHeaders = () => {
 
 function CSAMyBilling() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const editInvoiceId = searchParams.get('edit')
   
   const [distributors, setDistributors] = useState([])
   const [products, setProducts] = useState([])
@@ -24,6 +26,7 @@ function CSAMyBilling() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [savedInvoice, setSavedInvoice] = useState(null)
+  const [editingInvoice, setEditingInvoice] = useState(null)
   const printRef = useRef(null)
   const distributorDropdownRef = useRef(null)
   const productDropdownRef = useRef(null)
@@ -33,6 +36,54 @@ function CSAMyBilling() {
     fetchCurrentUser()
     fetchCSAProducts() // Added to fetch CSA's own products on load
   }, [])
+
+  const [invoiceData, setInvoiceData] = useState(null)
+
+  useEffect(() => {
+    if (editInvoiceId) {
+      fetchInvoice(editInvoiceId)
+    }
+  }, [editInvoiceId])
+
+  useEffect(() => {
+    // If we have invoice data and distributors are loaded, set the distributor and items
+    if (invoiceData && distributors.length > 0 && !selectedDistributor) {
+      const distributor = distributors.find(d => d.distributorId === invoiceData.distributorId)
+      if (distributor) {
+        selectDistributor(distributor, true)
+      }
+      
+      // Populate the items
+      const invoiceItems = invoiceData.invoiceItems.map(item => ({
+        id: Date.now() + Math.random(),
+        productId: item.productId,
+        productName: item.product?.name || 'Unnamed Product',
+        sku: item.product?.sku || '-',
+        batchNo: item.product?.batchNo || '',
+        qty: item.qty,
+        rate: item.rate,
+        gstPercentage: item.gstPercentage,
+        extraMarginPercentage: item.extraMarginPercentage || 0
+      }))
+      setItems(invoiceItems)
+    }
+  }, [invoiceData, distributors, selectedDistributor])
+
+  const fetchInvoice = async (invoiceId) => {
+    try {
+      const res = await fetch(`${API_URL}/csa/invoices/${invoiceId}`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        const invoice = await res.json()
+        setEditingInvoice(invoice)
+        setInvoiceData(invoice)
+      } else {
+        navigate('/csa/my-invoices')
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoice:', err)
+      navigate('/csa/my-invoices')
+    }
+  }
 
   const fetchCSAProducts = async () => {
     try {
@@ -92,11 +143,13 @@ function CSAMyBilling() {
     (typeof p.sku === 'string' && p.sku.toLowerCase().includes(searchProduct.toLowerCase()))
   )
 
-  const selectDistributor = (distributor) => {
+  const selectDistributor = (distributor, skipClearItems = false) => {
     setSelectedDistributor(distributor)
     setSearchDistributor(typeof distributor.companyName === 'string' ? distributor.companyName : '')
     setShowDistributorDropdown(false)
-    setItems([])
+    if (!skipClearItems) {
+      setItems([])
+    }
   }
 
   const addProduct = (product) => {
@@ -186,14 +239,29 @@ function CSAMyBilling() {
         extraMarginPercentage: item.extraMarginPercentage
       }))
       
-      const res = await fetch(`${API_URL}/csa/distributors/${selectedDistributor.distributorId}/invoices/create`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({ items: invoiceItems, isInterState })
-      })
+      let res
+      if (editingInvoice) {
+        // Update existing invoice
+        res = await fetch(`${API_URL}/csa/invoices/${editingInvoice.id}`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({ items: invoiceItems, isInterState })
+        })
+      } else {
+        // Create new invoice
+        res = await fetch(`${API_URL}/csa/distributors/${selectedDistributor.distributorId}/invoices/create`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({ items: invoiceItems, isInterState })
+        })
+      }
+      
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setSavedInvoice(data)
@@ -201,7 +269,7 @@ function CSAMyBilling() {
         setTimeout(() => window.print(), 100)
       }
       setTimeout(() => {
-        handleNewInvoice()
+        navigate('/csa/my-invoices')
       }, 1500)
     } catch (err) {
       setError(err.message)
@@ -216,7 +284,9 @@ function CSAMyBilling() {
     setItems([])
     setProducts([])
     setSavedInvoice(null)
+    setEditingInvoice(null)
     setError('')
+    navigate('/csa/my-invoices')
   }
 
   const totals = getGrandTotals()
@@ -226,7 +296,7 @@ function CSAMyBilling() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-            Create Invoice
+            {editingInvoice ? 'Edit Invoice' : 'Create Invoice'}
           </h1>
         </div>
         <div className="flex gap-3">

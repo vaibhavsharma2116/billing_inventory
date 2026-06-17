@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { RefreshCw } from 'lucide-react'
 
 const BASE_API_URL = import.meta.env.VITE_API_URL
 
@@ -240,9 +241,27 @@ function CSAReports() {
     }
   }
 
+  const fetchAllReports = async () => {
+    await Promise.all([
+      fetchPartySales(),
+      fetchProductSales(),
+      fetchInventoryReport()
+    ])
+  }
+
   return (
     <div className="p-4 md:p-8">
-      <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6">Reports & Analytics</h1>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Reports & Analytics</h1>
+        <button
+          onClick={fetchAllReports}
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
+        >
+          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </div>
 
       {/* Date Filter */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
