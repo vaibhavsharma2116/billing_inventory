@@ -55,7 +55,7 @@ function Purchase() {
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch(`${API_URL}/suppliers`, { headers: getAuthHeaders() })
+      const res = await fetch(`${PURCHASE_API_URL}/suppliers`, { headers: getAuthHeaders() })
       setSuppliers(await res.json())
     } catch (err) {
       console.error('Failed to fetch suppliers')
@@ -114,7 +114,7 @@ function Purchase() {
       if (supplierName) {
         formData.append('supplierName', supplierName)
       }
-      const response = await fetch(`${API_URL}/upload`, {
+      const response = await fetch(`${PURCHASE_API_URL}/upload`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: formData
@@ -238,7 +238,7 @@ function Purchase() {
           <input
             id="file-input"
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.pdf"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -261,7 +261,7 @@ function Purchase() {
                 Drag & drop your invoice file here
               </div>
               <div className="text-xs md:text-sm text-gray-500">
-                or click to browse (Excel .xlsx, .xls, .csv)
+                or click to browse (Excel .xlsx, .xls, .csv, PDF .pdf)
               </div>
             </div>
           )}

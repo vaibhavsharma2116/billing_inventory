@@ -31,7 +31,19 @@ function CSAMyBilling() {
   useEffect(() => {
     fetchDistributors()
     fetchCurrentUser()
+    fetchCSAProducts() // Added to fetch CSA's own products on load
   }, [])
+
+  const fetchCSAProducts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/csa/my-products`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setProducts(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch products')
+    }
+  }
 
   const fetchCurrentUser = async () => {
     try {
@@ -52,18 +64,6 @@ function CSAMyBilling() {
       }
     } catch (err) {
       console.error('Failed to fetch distributors')
-    }
-  }
-
-  const fetchProductsForDistributor = async (distributorId) => {
-    try {
-      const res = await fetch(`${API_URL}/csa/distributors/${distributorId}`, { headers: getAuthHeaders() })
-      if (res.ok) {
-        const data = await res.json()
-        setProducts(data.products || [])
-      }
-    } catch (err) {
-      console.error('Failed to fetch products')
     }
   }
 
@@ -96,7 +96,6 @@ function CSAMyBilling() {
     setSelectedDistributor(distributor)
     setSearchDistributor(typeof distributor.companyName === 'string' ? distributor.companyName : '')
     setShowDistributorDropdown(false)
-    fetchProductsForDistributor(distributor.distributorId)
     setItems([])
   }
 

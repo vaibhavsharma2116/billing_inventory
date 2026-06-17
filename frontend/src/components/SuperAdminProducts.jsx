@@ -68,6 +68,7 @@ function SuperAdminProducts() {
         headers: getAuthHeaders() 
       })
       const data = await res.json()
+      console.log('Fetched distributors:', data)
       setDistributors(data)
     } catch (err) {
       console.error('Failed to fetch distributors')
@@ -198,6 +199,10 @@ function SuperAdminProducts() {
       setError('Either select a distributor or check "Add to All Distributors"')
       return
     }
+    console.log('=== Uploading ===')
+    console.log('uploadAddToAll:', uploadAddToAll)
+    console.log('uploadDistributorId:', uploadDistributorId)
+    console.log('distributors:', distributors)
     try {
       setUploadLoading(true)
       setError('')
@@ -255,7 +260,7 @@ function SuperAdminProducts() {
 
       {/* Upload Section */}
       <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
-        <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Upload Products via Excel</h2>
+        <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Upload Products via Excel or PDF</h2>
         
         {/* Distributor Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -300,7 +305,7 @@ function SuperAdminProducts() {
           <input
             id="product-file-input"
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.pdf"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -323,7 +328,7 @@ function SuperAdminProducts() {
                 Drag & drop your product file here
               </div>
               <div className="text-xs md:text-sm text-gray-500">
-                or click to browse (Excel .xlsx, .xls, .csv)
+                or click to browse (Excel .xlsx, .xls, .csv or PDF)
               </div>
             </div>
           )}

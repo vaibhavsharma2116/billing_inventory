@@ -738,9 +738,9 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
   try {
     const { distributorId } = req.params
     const csaId = req.user.userId
-    const { items, isInterState } = req.body
+    const { partyId, items, isInterState } = req.body
 
-    console.log('Creating invoice:', { distributorId, csaId, items: items.length, isInterState })
+    console.log('Creating invoice:', { distributorId, csaId, partyId, items: items.length, isInterState })
 
     // Verify CSA has access to this distributor
     const distributor = await prisma.distributor.findFirst({
@@ -753,6 +753,17 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Items are required' })
+    }
+
+    // If partyId is provided, verify it exists and belongs to the distributor
+    if (partyId) {
+      const party = await prisma.party.findUnique({
+        where: { id: partyId }
+      })
+
+      if (!party || party.distributorId !== distributorId) {
+        return res.status(403).json({ error: 'Invalid party' })
+      }
     }
 
     const lastInvoice = await prisma.invoice.findFirst({
@@ -778,9 +789,7 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
           throw new Error(`Product not found: ${item.productId}`)
         }
         
-        if (product.distributorId !== distributorId) {
-          throw new Error(`Product ${product.name} does not belong to this distributor`)
-        }
+
         
         if (product.currentStock < item.qty) {
           throw new Error(`Insufficient stock for product: ${product.name}`)
@@ -833,6 +842,7 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
       const invoice = await tx.invoice.create({
         data: {
           invoiceNo: nextInvoiceNo,
+          partyId,
           distributorId,
           csaId,
           createdById: csaId,
@@ -846,7 +856,7 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
             create: invoiceItemsData
           }
         },
-        include: { invoiceItems: { include: { product: true } } }
+        include: { party: true, invoiceItems: { include: { product: true } } }
       })
 
       await tx.distributor.update({
@@ -1143,6 +1153,10 @@ router.get('/distributors/:distributorId/purchase/suppliers', authenticateToken,
 
 router.post('/distributors/:distributorId/purchase/upload', authenticateToken, requireCSA, upload.single('file'), async (req, res) => {
   try {
+    console.log('=== CSA Purchase upload request received')
+    console.log('req.file:', req.file)
+    console.log('req.body:', req.body)
+    
     const { distributorId } = req.params
     const csaId = req.user.userId
 
@@ -1162,26 +1176,247 @@ router.post('/distributors/:distributorId/purchase/upload', authenticateToken, r
     const supplierName = req.body.supplierName || 'Supplier'
     
     let items = []
-    const workbook = XLSX.readFile(req.file.path)
-    const sheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    const jsonDataWithHeaders = XLSX.utils.sheet_to_json(worksheet)
+    let jsonDataWithHeaders = []
+    const fs = require('fs')
+    
+    // Check file type - extension, mimetype, AND file signature "%PDF-"
+    const dataBuffer = fs.readFileSync(req.file.path)
+    const isPdfFromExtension = req.file.originalname.toLowerCase().endsWith('.pdf')
+    const isPdfFromMimetype = req.file.mimetype && req.file.mimetype.toLowerCase().includes('pdf')
+    const isPdfFromSignature = dataBuffer.slice(0, 4).equals(Buffer.from('%PDF'))
+    const isPdf = isPdfFromExtension || isPdfFromMimetype || isPdfFromSignature
+    
+    console.log('Is PDF check:', { 
+      isPdfFromExtension, 
+      isPdfFromMimetype, 
+      isPdfFromSignature, 
+      isPdf,
+      originalname: req.file.originalname, 
+      mimetype: req.file.mimetype,
+      first4Bytes: dataBuffer.slice(0, 4).toString()
+    })
+    
+    if (isPdf) {
+      const pdfParse = require('pdf-parse')
+      
+      try {
+        const data = await pdfParse(dataBuffer)
+        console.log('=== FULL PDF TEXT ===')
+        console.log(data.text)
+        
+        const lines = data.text.split(/\r?\n/).filter(line => line.trim())
+        console.log('=== PDF LINES ===')
+        console.log(lines)
+        
+        // First, let's find the header row
+        let headerRowIndex = -1
+        const headerPatterns = [
+          ['no', 'items', 'hsn', 'qty'],
+          ['item', 'product', 'hsn', 'quantity'],
+          ['sl', 'description', 'hsn', 'qty'],
+          ['serial', 'product', 'hsn', 'rate'],
+          ['no', 'items', 'hsn no', 'qty'],
+          ['no', 'items', 'hsn no.', 'qty.'],
+          ['no', 'items', 'hsn', 'mrp', 'rate']
+        ]
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].toLowerCase()
+          for (const pattern of headerPatterns) {
+            const matches = pattern.filter(keyword => line.includes(keyword)).length
+            if (matches >= 3) {
+              headerRowIndex = i
+              break
+            }
+          }
+          if (headerRowIndex !== -1) break
+        }
+        
+        if (headerRowIndex !== -1) {
+          console.log('Found header row at index', headerRowIndex, lines[headerRowIndex])
+          
+          let i = headerRowIndex + 1
+          while (i < lines.length) {
+            const line = lines[i].trim()
+            console.log('Processing line:', line, 'index:', i)
+            
+            if (line.toLowerCase().includes('total') || 
+                line.toLowerCase().includes('subtotal') || 
+                line.toLowerCase().includes('grand') ||
+                line.toLowerCase().includes('terms') ||
+                line.toLowerCase().includes('dispute') ||
+                line.toLowerCase().includes('jurisdiction') ||
+                line.toLowerCase().includes('rupee') ||
+                line.toLowerCase().includes('lakh') ||
+                line.toLowerCase().includes('thousand') ||
+                line.toLowerCase().includes('original for recipient') ||
+                line.toLowerCase().includes('taxable') ||
+                line.toLowerCase().includes('received amount')) {
+              i++
+              break // Stop at total/subtotal
+            }
+            
+            if (!/\d/.test(line) || line.length < 10) {
+              i++
+              continue
+            }
+            
+            const serialMatch = line.match(/^\s*(\d+)\s+(.*)$/)
+            if (serialMatch) {
+              const serialNum = parseInt(serialMatch[1])
+              let productLine = serialMatch[2]
+              
+              if (i + 1 < lines.length) {
+                const nextLine = lines[i + 1].trim()
+                if (nextLine.startsWith('@') || nextLine.toLowerCase().includes('off')) {
+                  i++
+                } else if (!/\d/.test(nextLine)) {
+                  productLine += ' ' + nextLine
+                  i++
+                }
+              }
+              
+              let productName = ''
+              let hsn = ''
+              let quantity = 1
+              let costPrice = 0
+              
+              const numMatches = productLine.match(/[\d,]+(?:\.\d+)?/g)
+              if (numMatches) {
+                const nums = numMatches.map(n => parseFloat(n.replace(/,/g, ''))).filter(n => !isNaN(n))
+                console.log('Numbers in line:', nums)
+                
+                let hsnIndex = -1
+                for (let j = 0; j < nums.length; j++) {
+                  const numStr = nums[j].toString()
+                  if (numStr.length >= 6 && numStr.length <= 8) {
+                    hsn = numStr
+                    hsnIndex = j
+                    break
+                  }
+                }
+                
+                const qtyMatch = productLine.match(/(\d+)\s*(?:PCS|PCS\.|NOS|NO\.|QTY)/i)
+                if (qtyMatch) {
+                  quantity = parseInt(qtyMatch[1])
+                } else {
+                  for (let j = 0; j < nums.length; j++) {
+                    if (j !== hsnIndex && nums[j] > 0 && nums[j] < 10000) {
+                      quantity = Math.round(nums[j])
+                      break
+                    }
+                  }
+                }
+                
+                const priceCandidates = nums.filter((n, j) => j !== hsnIndex && n > 0 && n !== quantity)
+                if (priceCandidates.length >= 2) {
+                  priceCandidates.sort((a, b) => a - b)
+                  costPrice = priceCandidates[0]
+                } else if (priceCandidates.length === 1) {
+                  costPrice = priceCandidates[0]
+                }
+              }
+              
+              productName = productLine
+                .replace(/[\d,₹$€%\-.()@]/g, ' ')
+                .replace(/(?:PCS|PCS\.|NOS|NO\.|QTY|HSN|MRP|RATE|TAX|TOTAL|OFF)/gi, ' ')
+                .replace(/\s{2,}/g, ' ')
+                .trim()
+              
+              console.log('Parsed product:', { productName, hsn, quantity, costPrice })
+              
+              if (productName.length > 2 && quantity > 0) {
+                items.push({
+                  productName,
+                  sku: '',
+                  hsn,
+                  batchNo: '',
+                  expiryDate: null,
+                  costPrice,
+                  gstPercentage: 0,
+                  quantity
+                })
+              }
+            }
+            
+            i++
+          }
+        }
+        
+        console.log('Final items extracted from PDF:', items)
+        
+      } catch (pdfErr) {
+        console.error('PDF parse error:', pdfErr)
+        jsonDataWithHeaders = [{ pdfError: pdfErr.message, stack: pdfErr.stack }]
+      }
+    } else {
+      // Read Excel file
+      const workbook = XLSX.readFile(req.file.path)
+      const sheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+      console.log('Raw Excel data (array of arrays):', jsonData)
+      
+      jsonDataWithHeaders = XLSX.utils.sheet_to_json(worksheet)
+      console.log('Excel data with headers:', jsonDataWithHeaders)
 
-    items = jsonDataWithHeaders.map((row) => ({
-      productName: row['Product Name'] || row['ProductName'] || row['name'] || row['Name'] || '',
-      sku: row['SKU'] || row['sku'] || row['Sku'] || '',
-      batchNo: row['Batch'] || row['Batch No'] || row['batchNo'] || row['batch'] || '',
-      expiryDate: row['Expiry'] || row['Expiry Date'] || row['expiryDate'] || row['expiry'] || null,
-      costPrice: parseFloat(row['Cost Price'] || row['costPrice'] || row['cost'] || row['Cost'] || 0),
-      gstPercentage: parseFloat(row['GST%'] || row['GST'] || row['gstPercentage'] || row['gst'] || 0),
-      quantity: parseInt(row['Quantity'] || row['Qty'] || row['quantity'] || row['qty'] || row['Stock'] || row['stock'] || 0)
-    })).filter(item => item.sku || item.productName)
+      // Support for many column header variations
+      items = jsonDataWithHeaders.map((row) => {
+        const getVal = (keys) => {
+          for (const key of keys) {
+            if (row[key] !== undefined) {
+              return row[key]
+            }
+          }
+          return ''
+        }
+
+        const getNumVal = (keys) => {
+          for (const key of keys) {
+            if (row[key] !== undefined) {
+              const val = row[key]
+              if (typeof val === 'number') return val
+              if (typeof val === 'string') {
+                const parsed = parseFloat(val.replace(/[₹$€,]/g, ''))
+                if (!isNaN(parsed)) return parsed
+              }
+            }
+          }
+          return 0
+        }
+
+        const getIntVal = (keys) => {
+          for (const key of keys) {
+            if (row[key] !== undefined) {
+              const val = row[key]
+              if (typeof val === 'number') return Math.round(val)
+              if (typeof val === 'string') {
+                const parsed = parseInt(val.replace(/[₹$€,]/g, ''))
+                if (!isNaN(parsed)) return parsed
+              }
+            }
+          }
+          return 0
+        }
+
+        return {
+          productName: getVal(['Product Name', 'ProductName', 'name', 'Name', 'Item', 'item', 'Item Name', 'Product', 'Description']),
+          sku: getVal(['SKU', 'sku', 'Sku', 'Item Code', 'ItemCode', 'Product Code', 'Code', 'Item No']),
+          batchNo: getVal(['Batch', 'Batch No', 'batchNo', 'batch', 'Batch Number']),
+          expiryDate: getVal(['Expiry', 'Expiry Date', 'expiryDate', 'expiry', 'Expiration Date']),
+          hsn: (getVal(['HSN', 'HSN No', 'HSN Code', 'hsn']) || '').toString().trim(),
+          costPrice: getNumVal(['Cost Price', 'costPrice', 'cost', 'Cost', 'Rate', 'rate', 'MRP', 'Price']),
+          gstPercentage: getNumVal(['GST%', 'GST', 'gstPercentage', 'gst', 'Tax', 'Tax%']),
+          quantity: getIntVal(['Quantity', 'Qty', 'quantity', 'qty', 'Stock', 'stock', 'Qty.'])
+        }
+      }).filter(item => item.sku || item.productName)
+    }
 
     if (items.length === 0) {
       return res.status(400).json({ 
         error: 'No valid items found in file', 
         rawData: jsonDataWithHeaders,
-        message: 'Make sure your Excel has columns like: Product Name, SKU, Cost Price, Quantity'
+        message: 'Make sure your file has product information'
       })
     }
 
@@ -1208,40 +1443,66 @@ router.post('/distributors/:distributorId/purchase/upload', authenticateToken, r
 
     for (const item of items) {
       let product
-
+      let wasExistingProduct = false
+      
+      console.log('=== Processing distributor purchase item ===')
+      console.log('Raw item:', item)
+      
+      // Clean product name
+      const cleanedProductName = item.productName 
+        ? item.productName.trim().replace(/\s{2,}/g, ' ') 
+        : ''
+      console.log('Cleaned product name:', cleanedProductName)
+      
+      // First check by SKU if available
       if (item.sku) {
-        product = await prisma.product.upsert({
+        product = await prisma.product.findFirst({
           where: { 
-            distributorId_sku: {
-              distributorId,
-              sku: item.sku
-            }
-          },
-          update: {
+            distributorId,
+            sku: item.sku 
+          }
+        })
+        console.log('Found existing distributor product by SKU:', product ? { id: product.id, sku: product.sku, currentStock: product.currentStock, name: product.name } : null)
+      }
+      
+      // If no SKU match, check by product name
+      if (!product && cleanedProductName) {
+        product = await prisma.product.findFirst({
+          where: { 
+            distributorId,
+            name: { equals: cleanedProductName, mode: 'insensitive' }
+          }
+        })
+        console.log('Found existing distributor product by name:', product ? { id: product.id, name: product.name, currentStock: product.currentStock } : null)
+      }
+      
+      if (product) {
+        wasExistingProduct = true
+        console.log('Updating existing product with quantity:', item.quantity)
+        // Update existing product stock
+        product = await prisma.product.update({
+          where: { id: product.id },
+          data: {
             currentStock: { increment: item.quantity },
             costPrice: item.costPrice,
-            ...(item.batchNo && { batchNo: item.batchNo }),
-            ...(item.expiryDate && { expiryDate: new Date(item.expiryDate) })
-          },
-          create: {
-            name: item.productName || 'Unnamed Product',
-            sku: item.sku,
-            hsn: '',
-            batchNo: item.batchNo || null,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-            costPrice: item.costPrice,
+            name: cleanedProductName || product.name,
+            hsn: item.hsn || product.hsn || '',
+            batchNo: item.batchNo || product.batchNo,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : product.expiryDate,
             baseSellingPrice: item.costPrice * 1.2,
-            gstPercentage: item.gstPercentage,
-            currentStock: item.quantity,
-            distributorId
+            gstPercentage: item.gstPercentage
           }
         })
+        console.log('Updated distributor product:', { id: product.id, currentStock: product.currentStock })
       } else {
+        wasExistingProduct = false
+        console.log('Creating new product with name:', cleanedProductName)
+        // Create new product
         product = await prisma.product.create({
           data: {
-            name: item.productName || 'Unnamed Product',
-            sku: `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            hsn: '',
+            name: cleanedProductName || 'Unnamed Product',
+            sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            hsn: item.hsn || '',
             batchNo: item.batchNo || null,
             expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
             costPrice: item.costPrice,
@@ -1251,6 +1512,7 @@ router.post('/distributors/:distributorId/purchase/upload', authenticateToken, r
             distributorId
           }
         })
+        console.log('Created new distributor product:', { id: product.id, sku: product.sku, name: product.name, currentStock: product.currentStock })
       }
 
       await prisma.purchaseItem.create({
@@ -1268,7 +1530,7 @@ router.post('/distributors/:distributorId/purchase/upload', authenticateToken, r
       results.push({
         product,
         quantityAdded: item.quantity,
-        action: item.sku ? (product ? 'updated' : 'created') : 'created'
+        action: wasExistingProduct ? 'updated' : 'created'
       })
     }
 
@@ -1445,6 +1707,475 @@ router.post('/distributors/:distributorId/purchase-returns/create', authenticate
   }
 })
 
+// CSA Reports Endpoints
+router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+    const csaId = req.user.userId
+    
+    let dateFilter = {}
+    if (startDate || endDate) {
+      if (startDate) {
+        dateFilter.gte = new Date(`${startDate}T00:00:00`)
+      }
+      if (endDate) {
+        dateFilter.lte = new Date(`${endDate}T23:59:59.999`)
+      }
+    } else {
+      // Default to last 30 days, but correctly handle local dates
+      const now = new Date()
+      dateFilter.gte = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      dateFilter.lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    }
+
+    const distributors = await prisma.distributor.findMany({
+      where: { csaId },
+      include: {
+        invoices: { 
+          where: { date: dateFilter }
+        }
+      }
+    })
+
+    const partySales = distributors.map(distributor => {
+      const totalBilling = distributor.invoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0)
+      return {
+        partyId: distributor.id,
+        partyName: distributor.companyName,
+        gstin: distributor.gstIn,
+        phone: distributor.phone,
+        totalBilling,
+        invoiceCount: distributor.invoices.length
+      }
+    })
+
+    res.json(convertDecimals(partySales.sort((a, b) => b.totalBilling - a.totalBilling)))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch party sales' })
+  }
+})
+
+router.get('/my-reports/product-sales', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+    const csaId = req.user.userId
+    
+    let dateFilter = {}
+    if (startDate || endDate) {
+      if (startDate) {
+        dateFilter.gte = new Date(`${startDate}T00:00:00`)
+      }
+      if (endDate) {
+        dateFilter.lte = new Date(`${endDate}T23:59:59.999`)
+      }
+    } else {
+      const now = new Date()
+      dateFilter.gte = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      dateFilter.lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    }
+
+    // Get ALL distributors linked to this CSA
+    const distributorIds = (await prisma.distributor.findMany({
+      where: { csaId },
+      select: { id: true }
+    })).map(d => d.id)
+
+    // Query invoice items directly (across all products linked to our distributors)
+    const invoiceItems = await prisma.invoiceItem.findMany({
+      where: {
+        invoice: {
+          distributorId: { in: distributorIds },
+          date: dateFilter
+        }
+      },
+      include: {
+        product: true,
+        invoice: true
+      }
+    })
+
+    const productMap = new Map()
+    
+    invoiceItems.forEach(item => {
+      const key = item.productId
+      if (!productMap.has(key)) {
+        productMap.set(key, {
+          productId: item.productId,
+          productName: item.product?.name || 'Unknown',
+          sku: item.product?.sku || '',
+          totalQtySold: 0,
+          totalRevenue: 0,
+          totalCost: 0
+        })
+      }
+      const existing = productMap.get(key)
+      existing.totalQtySold += item.qty
+      existing.totalRevenue += getNum(item.total)
+      if (item.product?.costPrice) {
+        existing.totalCost += item.qty * getNum(item.product.costPrice)
+      }
+    })
+
+    const productSales = Array.from(productMap.values()).map(ps => ({
+      ...ps,
+      profitMargin: ps.totalRevenue > 0 ? ((ps.totalRevenue - ps.totalCost) / ps.totalRevenue * 100).toFixed(2) : 0
+    }))
+
+    res.json(convertDecimals(productSales.sort((a, b) => b.totalRevenue - a.totalRevenue)))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch product sales' })
+  }
+})
+
+router.get('/my-reports/inventory', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+    const csaId = req.user.userId
+    
+    let dateFilter = {}
+    if (startDate || endDate) {
+      if (startDate) {
+        dateFilter.gte = new Date(`${startDate}T00:00:00`)
+      }
+      if (endDate) {
+        dateFilter.lte = new Date(`${endDate}T23:59:59.999`)
+      }
+    } else {
+      const now = new Date()
+      dateFilter.gte = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      dateFilter.lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    }
+
+    const distributors = await prisma.distributor.findMany({
+      where: { csaId },
+      include: {
+        products: {
+          include: {
+            invoiceItems: { where: { invoice: { date: dateFilter } } },
+            purchaseItems: { where: { purchase: { date: dateFilter } } }
+          }
+        }
+      }
+    })
+
+    const inventoryData = []
+    let totalValue = 0
+
+    distributors.forEach(distributor => {
+      distributor.products.forEach(product => {
+        const totalPurchases = product.purchaseItems.reduce((sum, pi) => sum + pi.qty, 0)
+        const totalSales = product.invoiceItems.reduce((sum, ii) => sum + ii.qty, 0)
+        const openingStock = product.currentStock - totalPurchases + totalSales
+        const closingStock = product.currentStock
+        const value = closingStock * getNum(product.costPrice)
+
+        inventoryData.push({
+          productId: product.id,
+          productName: product.name,
+          sku: product.sku,
+          openingStock,
+          purchases: totalPurchases,
+          sales: totalSales,
+          closingStock,
+          value
+        })
+        totalValue += value
+      })
+    })
+
+    // Also include products that have csaId but no distributorId
+    const csaOnlyProducts = await prisma.product.findMany({
+      where: { csaId, distributorId: null },
+      include: {
+        invoiceItems: { where: { invoice: { date: dateFilter } } },
+        purchaseItems: { where: { purchase: { date: dateFilter } } }
+      }
+    })
+
+    csaOnlyProducts.forEach(product => {
+      const totalPurchases = product.purchaseItems.reduce((sum, pi) => sum + pi.qty, 0)
+      const totalSales = product.invoiceItems.reduce((sum, ii) => sum + ii.qty, 0)
+      const openingStock = product.currentStock - totalPurchases + totalSales
+      const closingStock = product.currentStock
+      const value = closingStock * getNum(product.costPrice)
+
+      inventoryData.push({
+        productId: product.id,
+        productName: product.name,
+        sku: product.sku,
+        openingStock,
+        purchases: totalPurchases,
+        sales: totalSales,
+        closingStock,
+        value
+      })
+      totalValue += value
+    })
+
+    res.json(convertDecimals({
+      startDate: dateFilter.gte ? dateFilter.gte.toISOString() : null,
+      endDate: dateFilter.lte ? dateFilter.lte.toISOString() : null,
+      inventory: inventoryData,
+      totalValue
+    }))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch inventory report' })
+  }
+})
+
+router.get('/my-reports/party-product-sales/:partyId', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { partyId } = req.params
+    const { startDate, endDate } = req.query
+    const csaId = req.user.userId
+    
+    let dateFilter = {}
+    if (startDate || endDate) {
+      if (startDate) {
+        dateFilter.gte = new Date(`${startDate}T00:00:00`)
+      }
+      if (endDate) {
+        dateFilter.lte = new Date(`${endDate}T23:59:59.999`)
+      }
+    } else {
+      const now = new Date()
+      dateFilter.gte = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      dateFilter.lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    }
+
+    const distributor = await prisma.distributor.findFirst({ 
+      where: { id: partyId, csaId }
+    })
+    if (!distributor) {
+      return res.status(404).json({ error: 'Distributor not found' })
+    }
+
+    const invoiceItems = await prisma.invoiceItem.findMany({
+      where: {
+        invoice: {
+          distributorId: partyId,
+          date: dateFilter
+        }
+      },
+      include: {
+        product: true,
+        invoice: true
+      },
+      orderBy: { invoice: { date: 'desc' } }
+    })
+
+    const productSales = []
+    invoiceItems.forEach(item => {
+      const existing = productSales.find(ps => ps.productId === item.productId)
+      if (existing) {
+        existing.totalQty += item.qty
+        existing.orders.push({
+          date: item.invoice.date,
+          invoiceNo: item.invoice.invoiceNo,
+          qty: item.qty,
+          rate: item.rate
+        })
+      } else {
+        productSales.push({
+          productId: item.productId,
+          productName: item.product?.name || 'Unknown',
+          sku: item.product?.sku || '',
+          totalQty: item.qty,
+          orders: [{
+            date: item.invoice.date,
+            invoiceNo: item.invoice.invoiceNo,
+            qty: item.qty,
+            rate: item.rate
+          }]
+        })
+      }
+    })
+
+    res.json(convertDecimals(productSales))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch party product sales' })
+  }
+})
+
+router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { partyId } = req.params
+    const { startDate, endDate } = req.query
+    const csaId = req.user.userId
+    
+    const distributor = await prisma.distributor.findFirst({ 
+      where: { id: partyId, csaId }
+    })
+    if (!distributor) {
+      return res.status(404).json({ error: 'Distributor not found' })
+    }
+
+    let start, end
+    if (startDate) {
+      start = new Date(`${startDate}T00:00:00`)
+    } else {
+      const now = new Date()
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90)
+    }
+    
+    if (endDate) {
+      end = new Date(`${endDate}T23:59:59.999`)
+    } else {
+      const now = new Date()
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    }
+
+    // Fetch all relevant data in parallel
+    const [invoices, salesReturns, paymentsIn, openingInvoices, openingSalesReturns, openingPaymentsIn] = await Promise.all([
+      prisma.invoice.findMany({
+        where: { 
+          distributorId: partyId,
+          date: { gte: start, lte: end }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.salesReturn.findMany({
+        where: { 
+          distributorId: partyId,
+          date: { gte: start, lte: end }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.paymentIn.findMany({
+        where: { 
+          distributorId: partyId,
+          date: { gte: start, lte: end }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.invoice.findMany({
+        where: {
+          distributorId: partyId,
+          date: { lt: start }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.salesReturn.findMany({
+        where: {
+          distributorId: partyId,
+          date: { lt: start }
+        },
+        orderBy: { date: 'asc' }
+      }),
+      prisma.paymentIn.findMany({
+        where: {
+          distributorId: partyId,
+          date: { lt: start }
+        },
+        orderBy: { date: 'asc' }
+      })
+    ])
+
+    const openingDebit = openingInvoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0)
+    const openingCredit = openingSalesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) +
+      openingPaymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0)
+    const openingBalance = openingDebit - openingCredit
+
+    // Combine and sort all ledger entries
+    const ledgerEntries = []
+
+    if (openingBalance !== 0) {
+      ledgerEntries.push({
+        id: 'opening-balance',
+        date: start,
+        type: 'Opening Balance',
+        refNo: '-',
+        debit: openingBalance > 0 ? openingBalance : 0,
+        credit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
+        balance: 0
+      })
+    }
+    
+    // Add invoices (debit - distributor owes)
+    invoices.forEach(inv => {
+      ledgerEntries.push({
+        id: `inv-${inv.id}`,
+        date: inv.date,
+        type: 'Invoice',
+        refNo: inv.invoiceNo,
+        debit: getNum(inv.grandTotal),
+        credit: 0,
+        balance: 0
+      })
+    })
+
+    // Add sales returns (credit - we owe distributor)
+    salesReturns.forEach(sr => {
+      ledgerEntries.push({
+        id: `sr-${sr.id}`,
+        date: sr.date,
+        type: 'Sales Return',
+        refNo: sr.returnNo,
+        debit: 0,
+        credit: getNum(sr.grandTotal),
+        balance: 0
+      })
+    })
+
+    // Add payments in (credit - distributor paid)
+    paymentsIn.forEach(pin => {
+      ledgerEntries.push({
+        id: `pin-${pin.id}`,
+        date: pin.date,
+        type: 'Payment Received',
+        refNo: pin.paymentNo,
+        debit: 0,
+        credit: getNum(pin.amount),
+        balance: 0
+      })
+    })
+
+    // Sort all entries by date
+    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date))
+
+    // Calculate running balance
+    let runningBalance = openingBalance
+    ledgerEntries.forEach(entry => {
+      if (entry.type === 'Opening Balance') {
+        entry.balance = runningBalance
+        return
+      }
+      runningBalance += entry.debit - entry.credit
+      entry.balance = runningBalance
+    })
+
+    // Calculate summary
+    const totalDebit = invoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0)
+    const totalCredit = salesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) + 
+                       paymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0)
+    const periodNet = totalDebit - totalCredit
+    const closingBalance = openingBalance + periodNet
+
+    res.json(convertDecimals({
+      party: distributor,
+      ledgerEntries,
+      summary: {
+        openingBalance,
+        totalDebit,
+        totalCredit,
+        periodNet,
+        closingBalance
+      },
+      dateRange: {
+        start: start.toISOString(),
+        end: end.toISOString()
+      }
+    }))
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to fetch party ledger' })
+  }
+})
+
 // CSA Payments Out Endpoints
 router.get('/distributors/:distributorId/payments-out', authenticateToken, requireCSA, async (req, res) => {
   try {
@@ -1573,6 +2304,8 @@ router.get('/my-suppliers', authenticateToken, requireCSA, async (req, res) => {
 
 // CSA's own purchase upload
 router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single('file'), async (req, res) => {
+  let filePath;
+  
   try {
     const csaId = req.user.userId
     console.log('=== POST /my-purchases/upload - CSA ID:', csaId)
@@ -1580,32 +2313,285 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' })
     }
+    
+    filePath = req.file.path;
 
     const supplierName = req.body.supplierName || 'Supplier'
     
     let items = []
-    const workbook = XLSX.readFile(req.file.path)
-    const sheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    const jsonDataWithHeaders = XLSX.utils.sheet_to_json(worksheet)
-    console.log('Uploaded Excel data:', jsonDataWithHeaders)
+    let jsonDataWithHeaders = []
+    const fs = require('fs')
+    
+    // Check file type - extension, mimetype, AND file signature "%PDF-"
+    const dataBuffer = fs.readFileSync(filePath)
+    const isPdfFromExtension = req.file.originalname.toLowerCase().endsWith('.pdf')
+    const isPdfFromMimetype = req.file.mimetype && req.file.mimetype.toLowerCase().includes('pdf')
+    const isPdfFromSignature = dataBuffer.slice(0, 4).equals(Buffer.from('%PDF'))
+    const isPdf = isPdfFromExtension || isPdfFromMimetype || isPdfFromSignature
+    
+    console.log('Is PDF check:', { 
+      isPdfFromExtension, 
+      isPdfFromMimetype, 
+      isPdfFromSignature, 
+      isPdf,
+      originalname: req.file.originalname, 
+      mimetype: req.file.mimetype,
+      first4Bytes: dataBuffer.slice(0, 4).toString()
+    })
+    
+    if (isPdf) {
+      const pdfParse = require('pdf-parse')
+      
+      try {
+        const data = await pdfParse(dataBuffer)
+        console.log('=== FULL PDF TEXT ===')
+        console.log(data.text)
+        jsonDataWithHeaders = [{ pdfText: data.text }]
+        
+        // Try to parse table-like data from PDF text
+        const lines = data.text.split(/\r?\n/).filter(line => line.trim())
+        console.log('=== PDF LINES ===')
+        console.log(lines)
+        
+        // First, let's find the header row - looking for "Items", "HSN", "Qty" etc.
+        let headerRowIndex = -1
+        const headerPatterns = [
+          ['no', 'items', 'hsn', 'qty'],
+          ['item', 'product', 'hsn', 'quantity'],
+          ['sl', 'description', 'hsn', 'qty'],
+          ['serial', 'product', 'hsn', 'rate'],
+          ['no', 'items', 'hsn no', 'qty'],
+          ['no', 'items', 'hsn no.', 'qty.'],
+        ]
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].toLowerCase()
+          for (const pattern of headerPatterns) {
+            const matches = pattern.filter(keyword => line.includes(keyword)).length
+            if (matches >= 3) {
+              headerRowIndex = i
+              break
+            }
+          }
+          if (headerRowIndex !== -1) break
+        }
+        
+        if (headerRowIndex !== -1) {
+          console.log('Found header row at index', headerRowIndex, lines[headerRowIndex])
+          
+          // Now let's parse the data rows, handling multi-line items
+          let tempItems = []
+          let currentItem = null
+          let pastItems = false
+          for (let i = headerRowIndex + 1; i < lines.length; i++) {
+            const line = lines[i]
+            console.log('Processing line:', line)
+            
+            // Stop processing once we hit subtotal or total
+            if (line.toLowerCase().includes('subtotal') || line.toLowerCase().includes('total')) {
+              pastItems = true
+            }
+            if (pastItems) {
+              continue
+            }
+            
+            // Skip if line looks like a footer or not relevant
+            if (line.toLowerCase().includes('terms') ||
+                line.toLowerCase().includes('received') ||
+                line.toLowerCase().includes('invoice') ||
+                line.toLowerCase().includes('original') ||
+                line.length < 3) {
+              continue
+            }
+            
+            // Check if this is a new item line (starts with a number, optional space, and has non-numeric/symbol content)
+            const newItemMatch = line.match(/^(\d+)\s*(.*)/)
+            if (newItemMatch) {
+              const itemNumber = newItemMatch[1]
+              const restOfLine = newItemMatch[2]
+              // Check if restOfLine has at least some letters
+              const hasLetters = /[a-zA-Z]/.test(restOfLine)
+              if (hasLetters) {
+                // Save previous item if exists
+                if (currentItem && currentItem.productName) {
+                  tempItems.push(currentItem)
+                }
+              } else {
+                // Treat as continuation line if currentItem exists
+                if (currentItem) {
+                  // Check if this line has rate or tax info
+                  const rateMatch = line.match(/([\d,]+\.\d{2})/)
+                  if (rateMatch) {
+                    currentItem.costPrice = parseFloat(rateMatch[1].replace(/,/g, ''))
+                  }
+                  const gstMatch = line.match(/(\d+)\s*%/)
+                  if (gstMatch) {
+                    currentItem.gstPercentage = parseFloat(gstMatch[1])
+                  }
+                }
+                continue
+              }
+              
+              // Extract HSN first
+              let hsn = ''
+              const hsnMatch = restOfLine.match(/(\d{6,8})/)
+              if (hsnMatch) {
+                hsn = hsnMatch[1]
+              }
+              
+              // Extract quantity - remove HSN first to avoid matching it
+              let quantity = 1
+              let tempRestOfLine = restOfLine.replace(hsn, '')
+              const qtyMatch = tempRestOfLine.match(/(\d+)(?=\s*PCS)/i) || 
+                               tempRestOfLine.match(/(\d+)(?=\s*NOS)/i) ||
+                               tempRestOfLine.match(/(\d+)(?=\s*QTY)/i)
+              if (qtyMatch) {
+                quantity = parseInt(qtyMatch[1])
+              }
+              
+              // Extract product name
+              let productName = restOfLine
+                .replace(hsn, '') // remove HSN
+                .replace(/\d+\s*(?:PCS|PCS\.|NOS|NO\.|QTY)/gi, '') // remove quantity
+                .replace(/\d/g, '') // remove remaining numbers
+                .replace(/[₹$€%,\-–()\.\/\t-]/g, '') // remove symbols
+                .replace(/(?:PCS|PCS\.|NOS|NO\.|QTY|HSN|MRP|RATE|TAX|TOTAL|OFF)/gi, '') // remove keywords
+                .trim()
+              
+              productName = productName.replace(/\s{2,}/g, ' ').trim()
+              
+              currentItem = {
+                productName,
+                sku: '',
+                hsn,
+                batchNo: '',
+                expiryDate: null,
+                costPrice: 0,
+                gstPercentage: 0,
+                quantity
+              }
+            } else if (currentItem) {
+              // This is a continuation line of current item
+              // Check if line has rate or tax info
+              const rateMatch = line.match(/([\d,]+\.\d{2})/)
+              if (rateMatch) {
+                currentItem.costPrice = parseFloat(rateMatch[1].replace(/,/g, ''))
+              }
+              const gstMatch = line.match(/(\d+)\s*%/)
+              if (gstMatch) {
+                currentItem.gstPercentage = parseFloat(gstMatch[1])
+              }
+              
+              // Also check if product name needs to be extended
+              const moreName = line
+                .replace(/\d/g, '')
+                .replace(/[₹$€%,\-–()\.\/\t-]/g, '')
+                .replace(/(?:PCS|PCS\.|NOS|NO\.|QTY|HSN|MRP|RATE|TAX|TOTAL|OFF)/gi, '')
+                .trim()
+              if (moreName.length > 0) {
+                currentItem.productName += ' ' + moreName
+                currentItem.productName = currentItem.productName.replace(/\s{2,}/g, ' ').trim()
+              }
+            }
+          }
+          
+          // Add last item if exists
+          if (currentItem && currentItem.productName) {
+            tempItems.push(currentItem)
+          }
+          
+          // Now filter tempItems to have valid items
+          items = tempItems.filter(item => item.productName.length > 2)
+          console.log('Temp items:', tempItems)
+        }
+        
+        // If no items found with header, try a different approach
+        if (items.length === 0) {
+          console.log('No header found, trying line-by-line approach')
+          let tempItems = []
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i]
+            // Look for lines with multiple numbers (quantity + price)
+            const numMatches = line.match(/[\d,]+\.\d{2}/)
+            if (numMatches) {
+              let quantity = 1
+              let costPrice = 0
+              
+              // Try to find quantity first (smaller number)
+              const nums = line.match(/\d+/g)
+              if (nums && nums.length >= 2) {
+                const numValues = nums.map(n => parseInt(n)).filter(n => !isNaN(n))
+                // First number could be quantity, second could be price
+                if (numValues[0] < 10000) { // Assume quantity <10k
+                  quantity = Math.round(numValues[0])
+                }
+              }
+              
+              // Extract rate
+              const rateMatch = line.match(/[\d,]+\.\d{2}/)
+              if (rateMatch) {
+                costPrice = parseFloat(rateMatch[0].replace(/,/g, ''))
+              }
+              
+              // Extract product name
+              let productName = line
+                .replace(/[\d,₹$€%\-.()]/g, '')
+                .replace(/(?:PCS|PCS\.|NOS|NO\.|QTY|HSN|MRP|RATE|TAX|TOTAL|OFF)/gi, '')
+                .trim()
+              
+              if (productName.length > 2) {
+                tempItems.push({
+                  productName,
+                  sku: '',
+                  hsn: '',
+                  batchNo: '',
+                  expiryDate: null,
+                  costPrice,
+                  gstPercentage: 0,
+                  quantity
+                })
+              }
+            }
+          }
+          items = tempItems
+        }
+        
+        console.log('Final items extracted from PDF:', items)
+        
+      } catch (pdfErr) {
+        console.error('PDF parse error:', pdfErr)
+        jsonDataWithHeaders = [{ pdfError: pdfErr.message, stack: pdfErr.stack }]
+      }
+    } else {
+      // Read Excel file
+      const workbook = XLSX.readFile(filePath)
+      const sheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+      console.log('Raw Excel data (array of arrays):', jsonData)
+      
+      jsonDataWithHeaders = XLSX.utils.sheet_to_json(worksheet)
+      console.log('Excel data with headers:', jsonDataWithHeaders)
 
-    items = jsonDataWithHeaders.map((row) => ({
-      productName: row['Product Name'] || row['ProductName'] || row['name'] || row['Name'] || '',
-      sku: row['SKU'] || row['sku'] || row['Sku'] || '',
-      batchNo: row['Batch'] || row['Batch No'] || row['batchNo'] || row['batch'] || '',
-      expiryDate: row['Expiry'] || row['Expiry Date'] || row['expiryDate'] || row['expiry'] || null,
-      costPrice: parseFloat(row['Cost Price'] || row['costPrice'] || row['cost'] || row['Cost'] || 0),
-      gstPercentage: parseFloat(row['GST%'] || row['GST'] || row['gstPercentage'] || row['gst'] || 0),
-      quantity: parseInt(row['Quantity'] || row['Qty'] || row['quantity'] || row['qty'] || row['Stock'] || row['stock'] || 0)
-    })).filter(item => item.sku || item.productName)
-    console.log('Processed items:', items)
+      // Support many column header variations
+      items = jsonDataWithHeaders.map((row) => ({
+        productName: row['Product Name'] || row['ProductName'] || row['name'] || row['Name'] || row['Item'] || row['item'] || row['Item Name'] || row['Product'] || row['Description'] || '',
+        sku: row['SKU'] || row['sku'] || row['Sku'] || row['Item Code'] || row['ItemCode'] || row['Product Code'] || row['Code'] || row['Item No'] || '',
+        batchNo: row['Batch'] || row['Batch No'] || row['batchNo'] || row['batch'] || row['Batch Number'] || '',
+        expiryDate: row['Expiry'] || row['Expiry Date'] || row['expiryDate'] || row['expiry'] || row['Expiration Date'] || null,
+        hsn: (row['HSN'] || row['HSN No'] || row['HSN Code'] || row['hsn'] || '').toString().trim(),
+        costPrice: (typeof row['Cost Price'] === 'number') ? row['Cost Price'] : (typeof row['costPrice'] === 'number') ? row['costPrice'] : (typeof row['cost'] === 'number') ? row['cost'] : (typeof row['Cost'] === 'number') ? row['Cost'] : (typeof row['Rate'] === 'number') ? row['Rate'] : (typeof row['rate'] === 'number') ? row['rate'] : (typeof row['MRP'] === 'number') ? row['MRP'] : (typeof row['Price'] === 'number') ? row['Price'] : parseFloat(row['Cost Price'] || row['costPrice'] || row['cost'] || row['Cost'] || row['Rate'] || row['rate'] || row['MRP'] || row['Price'] || 0),
+        gstPercentage: (typeof row['GST%'] === 'number') ? row['GST%'] : (typeof row['GST'] === 'number') ? row['GST'] : (typeof row['gstPercentage'] === 'number') ? row['gstPercentage'] : (typeof row['gst'] === 'number') ? row['gst'] : (typeof row['Tax'] === 'number') ? row['Tax'] : (typeof row['Tax%'] === 'number') ? row['Tax%'] : parseFloat(row['GST%'] || row['GST'] || row['gstPercentage'] || row['gst'] || row['Tax'] || row['Tax%'] || 0),
+        quantity: (typeof row['Quantity'] === 'number') ? row['Quantity'] : (typeof row['Qty'] === 'number') ? row['Qty'] : (typeof row['quantity'] === 'number') ? row['quantity'] : (typeof row['qty'] === 'number') ? row['qty'] : (typeof row['Stock'] === 'number') ? row['Stock'] : (typeof row['stock'] === 'number') ? row['stock'] : parseInt(row['Quantity'] || row['Qty'] || row['quantity'] || row['qty'] || row['Stock'] || row['stock'] || 0)
+      })).filter(item => item.sku || item.productName)
+      console.log('Processed items:', items)
+    }
 
     if (items.length === 0) {
       return res.status(400).json({ 
         error: 'No valid items found in file', 
         rawData: jsonDataWithHeaders,
-        message: 'Make sure your Excel has columns like: Product Name, SKU, Cost Price, Quantity'
+        message: 'Make sure your file has product information'
       })
     }
 
@@ -1625,23 +2611,47 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
 
     for (const item of items) {
       let product
-      console.log('Processing item:', item)
+      console.log('=== Processing item ===')
+      console.log('Raw item:', item)
       
-      // Check if CSA already has a product with this SKU
-      product = await prisma.product.findFirst({
-        where: { csaId, sku: item.sku }
-      })
-      console.log('Found existing CSA product:', product ? { id: product.id, sku: product.sku, currentStock: product.currentStock } : null)
+      // Clean product name - remove extra spaces, trim
+      const cleanedProductName = item.productName 
+        ? item.productName.trim().replace(/\s{2,}/g, ' ') 
+        : ''
+      
+      console.log('Cleaned product name:', cleanedProductName)
+      
+      let wasExistingProduct = false
+      // First check by SKU if available
+      if (item.sku) {
+        product = await prisma.product.findFirst({
+          where: { csaId, sku: item.sku }
+        })
+        console.log('Found existing CSA product by SKU:', product ? { id: product.id, sku: product.sku, currentStock: product.currentStock, name: product.name } : null)
+      }
+      
+      // If no SKU match, check by product name (case-insensitive, trimmed)
+      if (!product && cleanedProductName) {
+        product = await prisma.product.findFirst({
+          where: { 
+            csaId, 
+            name: { equals: cleanedProductName, mode: 'insensitive' }
+          }
+        })
+        console.log('Found existing CSA product by name:', product ? { id: product.id, name: product.name, currentStock: product.currentStock } : null)
+      }
       
       if (product) {
+        wasExistingProduct = true
+        console.log('Updating existing product with quantity:', item.quantity)
         // Update existing product stock
         product = await prisma.product.update({
           where: { id: product.id },
           data: {
             currentStock: { increment: item.quantity },
             costPrice: item.costPrice,
-            name: item.productName || product.name,
-            hsn: product.hsn || '',
+            name: cleanedProductName || product.name,
+            hsn: item.hsn || product.hsn || '',
             batchNo: item.batchNo || product.batchNo,
             expiryDate: item.expiryDate ? new Date(item.expiryDate) : product.expiryDate,
             baseSellingPrice: item.costPrice * 1.2,
@@ -1650,12 +2660,14 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
         })
         console.log('Updated product:', { id: product.id, currentStock: product.currentStock })
       } else {
+        wasExistingProduct = false
+        console.log('Creating new product with name:', cleanedProductName)
         // Create new product
         product = await prisma.product.create({
           data: {
-            name: item.productName || 'Unnamed Product',
+            name: cleanedProductName || 'Unnamed Product',
             sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            hsn: '',
+            hsn: item.hsn || '',
             batchNo: item.batchNo || null,
             expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
             costPrice: item.costPrice,
@@ -1665,7 +2677,7 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
             csaId
           }
         })
-        console.log('Created new product:', { id: product.id, sku: product.sku, currentStock: product.currentStock })
+        console.log('Created new product:', { id: product.id, sku: product.sku, name: product.name, currentStock: product.currentStock })
       }
 
       await prisma.purchaseItem.create({
@@ -1683,7 +2695,7 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
       results.push({
         product,
         quantityAdded: item.quantity,
-        action: product ? 'updated' : 'created'
+        action: wasExistingProduct ? 'updated' : 'created'
       })
     }
 
@@ -1696,7 +2708,18 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
 
   } catch (error) {
     console.error('Error processing file:', error)
-    res.status(500).json({ error: 'Failed to process file' })
+    res.status(500).json({ error: 'Failed to process file', details: error.message })
+  } finally {
+    // Always cleanup uploaded file
+    if (filePath) {
+      try {
+        const fs = require('fs')
+        fs.unlinkSync(filePath)
+        console.log('Cleaned up uploaded file:', filePath)
+      } catch (cleanupError) {
+        console.error('Error cleaning up file:', cleanupError)
+      }
+    }
   }
 })
 
@@ -1706,53 +2729,16 @@ router.get('/my-products', authenticateToken, requireCSA, async (req, res) => {
     const csaId = req.user.userId
     console.log('=== GET /my-products - CSA ID:', csaId)
     
-    // Get all products (to find all unique SKUs and product details)
-    const allProducts = await prisma.product.findMany({
-      orderBy: { createdAt: 'desc' }
-    })
-    console.log('All products count:', allProducts.length)
-    
-    // Group products by SKU to get unique products
-    const uniqueProductsBySku = {}
-    allProducts.forEach(product => {
-      if (!uniqueProductsBySku[product.sku]) {
-        uniqueProductsBySku[product.sku] = product
-      }
-    })
-    console.log('Unique products by SKU count:', Object.keys(uniqueProductsBySku).length)
-    
     // Get CSA's own products
     const csaProducts = await prisma.product.findMany({
-      where: { csaId }
+      where: { csaId },
+      orderBy: { createdAt: 'desc' }
     })
     console.log('CSA products count:', csaProducts.length)
     console.log('CSA products:', csaProducts.map(p => ({ id: p.id, sku: p.sku, currentStock: p.currentStock })))
     
-    // Create a map of CSA's products by SKU
-    const csaProductsBySku = {}
-    csaProducts.forEach(product => {
-      csaProductsBySku[product.sku] = product
-    })
-    
-    // Combine the data: use product details from unique products, but stock from CSA's products
-    const result = Object.values(uniqueProductsBySku).map(product => {
-      const csaProduct = csaProductsBySku[product.sku]
-      const combined = {
-        ...product,
-        id: csaProduct?.id || product.id, // Use CSA's product ID if available
-        csaId: csaProduct?.csaId || null,
-        currentStock: csaProduct?.currentStock || 0
-      }
-      console.log(`Combined product for SKU ${product.sku}:`, { 
-        original: { id: product.id, currentStock: product.currentStock, csaId: product.csaId },
-        csa: csaProduct ? { id: csaProduct.id, currentStock: csaProduct.currentStock } : null,
-        combined: { id: combined.id, currentStock: combined.currentStock, csaId: combined.csaId }
-      })
-      return combined
-    })
-    
-    console.log('Final result to send:', result)
-    res.json(convertDecimals(result))
+    console.log('Final result to send:', csaProducts)
+    res.json(convertDecimals(csaProducts))
   } catch (error) {
     console.error('Error in /my-products:', error)
     res.status(500).json({ error: 'Failed to fetch products' })
@@ -2520,434 +3506,5 @@ router.get('/my-dashboard', authenticateToken, requireCSA, async (req, res) => {
 // ==================== CSA REPORTS ENDPOINTS ====================
 
 // CSA Distributor-wise Sales Report
-router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query
-    const csaId = req.user.userId
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const end = endDate ? new Date(endDate) : new Date()
-    start.setHours(0, 0, 0, 0)
-    end.setHours(23, 59, 59, 999)
-
-    const distributors = await prisma.distributor.findMany({
-      where: { csaId },
-      include: {
-        invoices: {
-          where: { csaId, date: { gte: start, lte: end } },
-          include: { invoiceItems: true }
-        }
-      }
-    })
-
-    const distributorSales = distributors.map(dist => {
-      const totalBilling = dist.invoices.reduce((sum, inv) => {
-        if (typeof inv?.grandTotal === 'number') return sum + inv.grandTotal
-        if (inv?.grandTotal?.toNumber) return sum + inv.grandTotal.toNumber()
-        if (typeof inv?.grandTotal === 'string' && !isNaN(parseFloat(inv.grandTotal))) return sum + parseFloat(inv.grandTotal)
-        return sum
-      }, 0)
-      return {
-        partyId: dist.id,
-        partyName: dist.companyName,
-        gstin: dist.gstIn,
-        phone: dist.phone,
-        totalBilling,
-        invoiceCount: dist.invoices.length
-      }
-    })
-
-    res.json(distributorSales.sort((a, b) => b.totalBilling - a.totalBilling))
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Failed to fetch distributor sales' })
-  }
-})
-
-// CSA Product-wise Sales Report (for all CSA-managed distributors)
-router.get('/my-reports/product-sales', authenticateToken, requireCSA, async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query
-    const csaId = req.user.userId
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const end = endDate ? new Date(endDate) : new Date()
-    start.setHours(0, 0, 0, 0)
-    end.setHours(23, 59, 59, 999)
-
-    // Get all products from CSA's distributors
-    const products = await prisma.product.findMany({
-      where: { distributor: { csaId } },
-      include: {
-        invoiceItems: { 
-          where: { 
-            invoice: { 
-              csaId,
-              distributor: { csaId },
-              date: { gte: start, lte: end } 
-            } 
-          }, 
-          include: { invoice: true } 
-        }
-      }
-    })
-
-    const getNum = (val) => {
-      if (typeof val === 'number') return val
-      if (val?.toNumber) return val.toNumber()
-      return parseFloat(val)
-    }
-    const productSales = products.map(product => {
-      const totalQtySold = product.invoiceItems.reduce((sum, ii) => sum + ii.qty, 0)
-      const totalRevenue = product.invoiceItems.reduce((sum, ii) => sum + getNum(ii.total), 0)
-      const totalCost = totalQtySold * getNum(product.costPrice)
-      const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0
-
-      return {
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        totalQtySold,
-        totalRevenue,
-        totalCost,
-        profitMargin: profitMargin.toFixed(2)
-      }
-    })
-
-    res.json(convertDecimals(productSales.sort((a, b) => b.totalRevenue - a.totalRevenue)))
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Failed to fetch product sales' })
-  }
-})
-
-// CSA Distributor-wise Product Sales
-router.get('/my-reports/party-product-sales/:partyId', authenticateToken, requireCSA, async (req, res) => {
-  try {
-    const { partyId } = req.params
-    const { startDate, endDate } = req.query
-    const csaId = req.user.userId
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const end = endDate ? new Date(endDate) : new Date()
-    start.setHours(0, 0, 0, 0)
-    end.setHours(23, 59, 59, 999)
-
-    const distributor = await prisma.distributor.findUnique({ where: { id: partyId } })
-    if (!distributor) {
-      return res.status(404).json({ error: 'Distributor not found' })
-    }
-    if (distributor.csaId !== csaId) {
-      return res.status(403).json({ error: 'Access denied' })
-    }
-
-    const invoices = await prisma.invoice.findMany({
-      where: { distributorId: partyId, csaId, date: { gte: start, lte: end } },
-      include: {
-        invoiceItems: { include: { product: true } }
-      },
-      orderBy: { date: 'desc' }
-    })
-
-    const productSales = []
-    invoices.forEach(invoice => {
-      invoice.invoiceItems.forEach(item => {
-        const existing = productSales.find(ps => ps.productId === item.productId)
-        if (existing) {
-          existing.totalQty += item.qty
-          existing.orders.push({
-            date: invoice.date,
-            invoiceNo: invoice.invoiceNo,
-            qty: item.qty,
-            rate: item.rate
-          })
-        } else {
-          productSales.push({
-            productId: item.productId,
-            productName: item.product.name,
-            sku: item.product.sku,
-            totalQty: item.qty,
-            orders: [{
-              date: invoice.date,
-              invoiceNo: invoice.invoiceNo,
-              qty: item.qty,
-              rate: item.rate
-            }]
-          })
-        }
-      })
-    })
-
-    res.json(convertDecimals(productSales))
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Failed to fetch party product sales' })
-  }
-})
-
-// CSA Inventory Valuation Report (for all CSA-managed distributors)
-router.get('/my-reports/inventory', authenticateToken, requireCSA, async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query
-    const csaId = req.user.userId
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const end = endDate ? new Date(endDate) : new Date()
-
-    const products = await prisma.product.findMany({
-      where: { distributor: { csaId } },
-      include: {
-        invoiceItems: { where: { invoice: { csaId, date: { gte: start, lte: end }, distributor: { csaId } } } },
-        purchaseItems: { where: { purchase: { csaId, date: { gte: start, lte: end }, distributor: { csaId } } } }
-      }
-    })
-
-    const inventoryData = products.map(product => {
-      const totalPurchases = product.purchaseItems.reduce((sum, pi) => sum + pi.qty, 0)
-      const totalSales = product.invoiceItems.reduce((sum, ii) => sum + ii.qty, 0)
-      const openingStock = product.currentStock - totalPurchases + totalSales
-      const closingStock = product.currentStock
-
-      return {
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        openingStock,
-        purchases: totalPurchases,
-        sales: totalSales,
-        closingStock,
-        value: closingStock * product.costPrice
-      }
-    })
-
-    res.json({
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-      inventory: inventoryData,
-      totalValue: inventoryData.reduce((sum, item) => sum + item.value, 0)
-    })
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Failed to fetch inventory report' })
-  }
-})
-
-// CSA Distributor Ledger Report
-router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, async (req, res) => {
-  try {
-    const { partyId } = req.params
-    const { startDate, endDate } = req.query
-    const csaId = req.user.userId
-    
-    const distributor = await prisma.distributor.findUnique({ where: { id: partyId } })
-    if (!distributor) {
-      return res.status(404).json({ error: 'Distributor not found' })
-    }
-    if (distributor.csaId !== csaId) {
-      return res.status(403).json({ error: 'Access denied' })
-    }
-
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Default 90 days
-    const end = endDate ? new Date(endDate) : new Date()
-    start.setHours(0, 0, 0, 0)
-    end.setHours(23, 59, 59, 999)
-
-    // Fetch all relevant data in parallel for the distributor for the selected period and prior period
-    const [invoices, salesReturns, paymentsIn, paymentsOut, purchaseReturns, openingInvoices, openingSalesReturns, openingPaymentsIn, openingPaymentsOut, openingPurchaseReturns] = await Promise.all([
-      prisma.invoice.findMany({
-        where: { 
-          distributorId: partyId,
-          csaId,
-          date: { gte: start, lte: end }
-        },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.salesReturn.findMany({
-        where: { 
-          distributorId: partyId,
-          csaId,
-          date: { gte: start, lte: end }
-        },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.paymentIn.findMany({
-        where: { 
-          distributorId: partyId,
-          csaId,
-          date: { gte: start, lte: end }
-        },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.paymentOut.findMany({
-        where: { 
-          distributorId: partyId,
-          csaId,
-          date: { gte: start, lte: end }
-        },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.purchaseReturn.findMany({
-        where: { 
-          distributorId: partyId,
-          csaId,
-          date: { gte: start, lte: end }
-        },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.invoice.findMany({
-        where: { distributorId: partyId, csaId, date: { lt: start } },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.salesReturn.findMany({
-        where: { distributorId: partyId, csaId, date: { lt: start } },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.paymentIn.findMany({
-        where: { distributorId: partyId, csaId, date: { lt: start } },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.paymentOut.findMany({
-        where: { distributorId: partyId, csaId, date: { lt: start } },
-        orderBy: { date: 'asc' }
-      }),
-      prisma.purchaseReturn.findMany({
-        where: { distributorId: partyId, csaId, date: { lt: start } },
-        orderBy: { date: 'asc' }
-      })
-    ])
-
-    // Helper to get numeric grandTotal
-    const getNum = (val) => {
-      if (typeof val === 'number') return val
-      if (val?.toNumber) return val.toNumber()
-      if (typeof val === 'string' && !isNaN(parseFloat(val))) return parseFloat(val)
-      return 0
-    }
-
-    const openingDebit = openingInvoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0) +
-      openingPaymentsOut.reduce((sum, pout) => sum + getNum(pout.amount), 0)
-    const openingCredit = openingSalesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) +
-      openingPaymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0) +
-      openingPurchaseReturns.reduce((sum, pr) => sum + getNum(pr.grandTotal), 0)
-    const openingBalance = openingDebit - openingCredit
-
-    // Combine and sort all ledger entries
-    const ledgerEntries = []
-
-    if (openingBalance !== 0) {
-      ledgerEntries.push({
-        id: 'opening-balance',
-        date: start,
-        type: 'Opening Balance',
-        refNo: '-',
-        debit: openingBalance > 0 ? openingBalance : 0,
-        credit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
-        balance: 0
-      })
-    }
-    
-    // Add invoices (debit - party owes us)
-    invoices.forEach(inv => {
-      ledgerEntries.push({
-        id: `inv-${inv.id}`,
-        date: inv.date,
-        type: 'Invoice',
-        refNo: inv.invoiceNo,
-        debit: getNum(inv.grandTotal),
-        credit: 0,
-        balance: 0 // Will calculate later
-      })
-    })
-
-    // Add sales returns (credit - we owe party)
-    salesReturns.forEach(sr => {
-      ledgerEntries.push({
-        id: `sr-${sr.id}`,
-        date: sr.date,
-        type: 'Sales Return',
-        refNo: sr.returnNo,
-        debit: 0,
-        credit: getNum(sr.grandTotal),
-        balance: 0
-      })
-    })
-
-    // Add payments in (credit - party paid us)
-    paymentsIn.forEach(pin => {
-      ledgerEntries.push({
-        id: `pin-${pin.id}`,
-        date: pin.date,
-        type: 'Payment Received',
-        refNo: pin.paymentNo,
-        debit: 0,
-        credit: getNum(pin.amount),
-      })
-    })
-
-    // Add payments out (debit - we paid supplier)
-    paymentsOut.forEach(pout => {
-      ledgerEntries.push({
-        id: `pout-${pout.id}`,
-        date: pout.date,
-        type: 'Payment Out',
-        refNo: pout.paymentNo,
-        debit: getNum(pout.amount),
-        credit: 0,
-        balance: 0
-      })
-    })
-
-    // Add purchase returns (credit - supplier owes us)
-    purchaseReturns.forEach(pr => {
-      ledgerEntries.push({
-        id: `pr-${pr.id}`,
-        date: pr.date,
-        type: 'Purchase Return',
-        refNo: pr.returnNo,
-        debit: 0,
-        credit: getNum(pr.grandTotal),
-        balance: 0
-      })
-    })
-
-    // Sort all entries by date
-    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date))
-
-    // Calculate running balance
-    let runningBalance = openingBalance
-    ledgerEntries.forEach(entry => {
-      if (entry.type === 'Opening Balance') {
-        entry.balance = runningBalance
-        return
-      }
-      runningBalance += entry.debit - entry.credit
-      entry.balance = runningBalance
-    })
-
-    // Calculate summary
-    const totalDebit = invoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0) +
-                     paymentsOut.reduce((sum, pout) => sum + getNum(pout.amount), 0)
-    const totalCredit = salesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0) + 
-                       paymentsIn.reduce((sum, pin) => sum + getNum(pin.amount), 0) +
-                       purchaseReturns.reduce((sum, pr) => sum + getNum(pr.grandTotal), 0)
-    const periodNet = totalDebit - totalCredit
-    const closingBalance = openingBalance + periodNet
-
-    res.json(convertDecimals({
-      party: distributor,
-      ledgerEntries,
-      summary: {
-        openingBalance,
-        totalDebit,
-        totalCredit,
-        periodNet,
-        closingBalance
-      },
-      dateRange: {
-        start: start.toISOString(),
-        end: end.toISOString()
-      }
-    }))
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: 'Failed to fetch party ledger' })
-  }
-})
 
 module.exports = router

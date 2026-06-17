@@ -16,7 +16,6 @@ const authenticateToken = async (req, res, next) => {
       return res.sendStatus(403)
     }
 
-    // Check if user is still active
     const dbUser = await prisma.user.findUnique({
       where: { id: user.userId }
     })

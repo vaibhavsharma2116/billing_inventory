@@ -548,6 +548,7 @@ router.get('/distributors', authenticateToken, requireSuperAdmin, async (req, re
         where: { distributorId: dist.id, date: whereDateRange }
       })
       return {
+        id: dist.id,
         distributorId: dist.id,
         companyName: dist.companyName,
         ownerName: dist.ownerName,
@@ -1292,11 +1293,12 @@ router.post('/products', authenticateToken, requireSuperAdmin, async (req, res) 
       const products = await Promise.all(
         distributors.map(async (dist) => {
           try {
+            const finalHsn = hsn ? String(hsn).trim() : null
             return await prisma.product.create({
               data: {
                 name,
                 sku,
-                hsn: hsn || null,
+                hsn: finalHsn,
                 batchNo: batchNo || null,
                 expiryDate: expiryDate ? new Date(expiryDate) : null,
                 costPrice: parseFloat(costPrice),
@@ -1322,11 +1324,12 @@ router.post('/products', authenticateToken, requireSuperAdmin, async (req, res) 
       })
     } else if (distributorId) {
       // Add to specific distributor
+      const finalHsn = hsn ? String(hsn).trim() : null
       const product = await prisma.product.create({
         data: {
           name,
           sku,
-          hsn: hsn || null,
+          hsn: finalHsn,
           batchNo: batchNo || null,
           expiryDate: expiryDate ? new Date(expiryDate) : null,
           costPrice: parseFloat(costPrice),
@@ -1360,7 +1363,7 @@ router.put('/products/:id', authenticateToken, requireSuperAdmin, async (req, re
       data: {
         name,
         sku,
-        hsn: hsn || null,
+        hsn: hsn ? String(hsn).trim() : null,
         batchNo: batchNo || null,
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         costPrice: parseFloat(costPrice),
@@ -1397,34 +1400,267 @@ router.delete('/products/:id', authenticateToken, requireSuperAdmin, async (req,
   }
 })
 
-// Excel product upload
+// Excel/PDF product upload
 router.post('/products/upload', authenticateToken, requireSuperAdmin, upload.single('file'), async (req, res) => {
   try {
+    console.log('=== Superadmin product upload request received')
+    console.log('req.file:', req.file)
+    console.log('req.body:', req.body)
+    
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' })
     }
 
     const { addToAllDistributors, distributorId } = req.body
+    const addToAll = addToAllDistributors === 'true' || addToAllDistributors === true
 
-    if (!addToAllDistributors && !distributorId) {
+    console.log('=== Upload parameters ===')
+    console.log('req.body:', req.body)
+    console.log('addToAll:', addToAll, 'distributorId:', distributorId, 'distributorId type:', typeof distributorId)
+
+    if (!addToAll && !distributorId) {
       return res.status(400).json({ error: 'Either select a distributor or check "Add to All Distributors"' })
     }
 
-    // Read Excel file
-    const workbook = XLSX.readFile(req.file.path)
-    const sheetName = workbook.SheetNames[0]
-    const worksheet = workbook.Sheets[sheetName]
-    const jsonData = XLSX.utils.sheet_to_json(worksheet)
+    let jsonData = []
+    const fs = require('fs')
+    
+    // Check file type - extension, mimetype, AND file signature "%PDF-"
+    const dataBuffer = fs.readFileSync(req.file.path)
+    const isPdfFromExtension = req.file.originalname.toLowerCase().endsWith('.pdf')
+    const isPdfFromMimetype = req.file.mimetype && req.file.mimetype.toLowerCase().includes('pdf')
+    const isPdfFromSignature = dataBuffer.slice(0, 4).equals(Buffer.from('%PDF'))
+    const isPdf = isPdfFromExtension || isPdfFromMimetype || isPdfFromSignature
+    
+    console.log('Is PDF check:', { 
+      isPdfFromExtension, 
+      isPdfFromMimetype, 
+      isPdfFromSignature, 
+      isPdf,
+      originalname: req.file.originalname, 
+      mimetype: req.file.mimetype,
+      first4Bytes: dataBuffer.slice(0, 4).toString()
+    })
+    
+    if (isPdf) {
+      const pdfParse = require('pdf-parse')
+      let data;
+      
+      try {
+        data = await pdfParse(dataBuffer)
+        console.log('Full PDF text:', data.text.substring(0, 3000))
+        
+        const lines = data.text.split(/\r?\n/).filter(line => line.trim())
+        console.log('All lines:', lines)
+        
+        let headerRowIndex = -1
+        const headerPatterns = [
+          ['no', 'items', 'hsn', 'qty'],
+          ['item', 'product', 'hsn', 'quantity'],
+          ['sl', 'description', 'hsn', 'qty'],
+          ['serial', 'product', 'hsn', 'rate'],
+          ['no', 'items', 'hsn', 'mrp', 'rate'],
+          ['no', 'items', 'hsn no', 'qty'],
+          ['no', 'items', 'hsn no.', 'qty'],
+          ['no', 'items', 'hsn', 'mrp', 'rate', 'tax']
+        ]
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].toLowerCase()
+          for (const pattern of headerPatterns) {
+            const matches = pattern.filter(keyword => line.includes(keyword)).length
+            if (matches >= 2) { // Reduced required matches to find more headers
+              headerRowIndex = i
+              break
+            }
+          }
+          if (headerRowIndex !== -1) break
+        }
+        
+        if (headerRowIndex !== -1) {
+          console.log('Found header row at index', headerRowIndex, lines[headerRowIndex])
+          
+          let i = headerRowIndex + 1
+          while (i < lines.length) {
+            const line = lines[i].trim()
+            console.log('Processing line:', line, 'index:', i)
+            
+            if (line.toLowerCase().includes('total') || 
+                line.toLowerCase().includes('subtotal') || 
+                line.toLowerCase().includes('grand') ||
+                line.toLowerCase().includes('terms') ||
+                line.toLowerCase().includes('dispute') ||
+                line.toLowerCase().includes('jurisdiction') ||
+                line.toLowerCase().includes('rupee') ||
+                line.toLowerCase().includes('lakh') ||
+                line.toLowerCase().includes('thousand') ||
+                line.toLowerCase().includes('original for recipient') ||
+                line.toLowerCase().includes('taxable') ||
+                line.toLowerCase().includes('received amount')) {
+              break // Stop at total/subtotal
+            }
 
-    console.log('Excel data:', jsonData)
+            // Check if line starts with a number followed by non-number (serial number)
+            const serialMatch = line.match(/^(\d+)([^\d].*)$/)
+            if (serialMatch) {
+              const serialNum = parseInt(serialMatch[1])
+              let productLine = serialMatch[2] // Rest after serial number
+              let allProductText = productLine
+              let allNumbers = []
+
+              // Helper function to extract numbers correctly
+              const extractNumbers = (text) => {
+                // First, handle cases like "115.6721,653.33" - split after decimal with 2 digits
+                let processed = text.replace(/(\.\d{2})(\d)/g, '$1 $2')
+                // Also split combined HSN and quantity: look for 8-digit number followed by more digits!
+                processed = processed.replace(/(\d{8})(\d+)/g, '$1 $2')
+                const matches = processed.match(/\d+(?:,\d+)*(?:\.\d+)?/g)
+                return matches || []
+              }
+
+              // Extract numbers from main product line
+              const mainNums = extractNumbers(productLine)
+              if (mainNums) allNumbers.push(...mainNums)
+
+              // Collect lines until next product or total
+              i++
+              while (i < lines.length) {
+                const nextLine = lines[i].trim()
+                const isNextProduct = /^\d+[^\d]/.test(nextLine)
+                const isTotalLine = nextLine.toLowerCase().includes('total') || 
+                                   nextLine.toLowerCase().includes('subtotal')
+                if (isNextProduct || isTotalLine) {
+                  break
+                }
+                allProductText += ' ' + nextLine
+                // Extract numbers from this line
+                const nextNums = extractNumbers(nextLine)
+                if (nextNums) allNumbers.push(...nextNums)
+                i++
+              }
+
+              // Now parse this product
+              let productName = ''
+              let hsn = ''
+              let quantity = 1
+              let costPrice = 0
+              let sellingPrice = 0
+
+              // Parse all numbers
+              const nums = allNumbers.map(n => parseFloat(n.replace(/,/g, ''))).filter(n => !isNaN(n))
+              console.log('All collected numbers:', nums)
+
+              // Find HSN: exactly 8 digits as per PDF
+              let hsnIndex = -1
+              for (let j = 0; j < nums.length; j++) {
+                const numStr = nums[j].toString()
+                if (Number.isInteger(nums[j]) && numStr.length === 8) {
+                  hsn = numStr
+                  hsnIndex = j
+                  break
+                }
+              }
+
+              // Find Quantity: look for PCS, exclude HSN first
+              let textForQty = allProductText
+              if (hsn) {
+                textForQty = textForQty.replace(hsn, '')
+              }
+              const qtyMatch = textForQty.match(/(\d+)\s*(?:PCS|PCS\.|NOS|NO\.|QTY)/i)
+              if (qtyMatch) {
+                quantity = parseInt(qtyMatch[1])
+              } else {
+                // If no qty match, find the number right after HSN!
+                if (hsnIndex !== -1 && hsnIndex + 1 < nums.length) {
+                  const candidateQty = nums[hsnIndex + 1]
+                  if (Number.isInteger(candidateQty) && candidateQty > 0 && candidateQty < 10000) {
+                    quantity = candidateQty
+                  }
+                }
+              }
+
+              // Find price candidates, exclude tax/discount percentages and big totals
+              const priceCandidates = nums.filter((n, j) => 
+                j !== hsnIndex && 
+                n > 0 && 
+                n !== quantity && 
+                n < 100000 &&
+                n !== 18 && // exclude common tax percentage (GST)
+                Math.abs(n - 64.41) > 0.1 && // exclude common discount percentage
+                n < 5000 && // exclude big totals like 21653.33
+                n !== 0
+              )
+              console.log('Filtered price candidates:', priceCandidates)
+              
+              if (priceCandidates.length >= 2) {
+                priceCandidates.sort((a, b) => a - b)
+                // The smallest should be Rate (costPrice), largest should be MRP (sellingPrice)
+                costPrice = priceCandidates[0]
+                sellingPrice = priceCandidates[priceCandidates.length - 1]
+              } else if (priceCandidates.length === 1) {
+                costPrice = priceCandidates[0]
+                sellingPrice = costPrice * 1.2
+              }
+
+              // Extract product name
+              productName = allProductText
+                .replace(/[\d,₹$€%\-.()@]/g, ' ')
+                .replace(/(?:PCS|PCS\.|NOS|NO\.|QTY|HSN|MRP|RATE|TAX|TOTAL|OFF|%)/gi, ' ')
+                .replace(/\s{2,}/g, ' ')
+                .trim()
+
+              console.log('Parsed product:', { productName, hsn, quantity, costPrice, sellingPrice })
+
+              if (productName.length > 2 && quantity > 0) {
+                jsonData.push({
+                  'name': productName,
+                  'sku': '',
+                  'hsn': hsn,
+                  'cost': costPrice,
+                  'price': sellingPrice,
+                  'gst': 0,
+                  'quantity': quantity
+                })
+              }
+            } else {
+              i++
+            }
+          }
+        }
+        
+        // No fallback approach to avoid parsing random lines as products
+        
+        console.log('Final items extracted from PDF:', jsonData)
+        
+      } catch (pdfErr) {
+        console.error('PDF parse error:', pdfErr)
+        jsonData = [{ 'pdfError': pdfErr.message, 'stack': pdfErr.stack, 'text': data ? data.text.substring(0, 1000) : '' }]
+      }
+    } else {
+      // Read Excel file
+      const workbook = XLSX.readFile(req.file.path)
+      const sheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      jsonData = XLSX.utils.sheet_to_json(worksheet)
+    }
+
+    console.log('Uploaded data:', jsonData)
 
     // Get distributors to add products to
     let targetDistributors = []
-    if (addToAllDistributors) {
+    const allDistributors = await prisma.distributor.findMany()
+    console.log('=== All distributors in database ===', allDistributors.map(d => ({ id: d.id, name: d.companyName, isActive: d.isActive })))
+    
+    if (addToAll) {
+      console.log('Adding to all distributors')
       targetDistributors = await prisma.distributor.findMany({ where: { isActive: true } })
+      console.log('Found active distributors:', targetDistributors.map(d => ({ id: d.id, name: d.companyName })))
     } else {
+      console.log('Finding distributor with id:', distributorId)
       const distributor = await prisma.distributor.findUnique({ where: { id: distributorId } })
+      console.log('Found distributor:', distributor)
       if (!distributor) {
+        console.error('No distributor found with id:', distributorId)
         return res.status(404).json({ error: 'Distributor not found' })
       }
       targetDistributors = [distributor]
@@ -1436,9 +1672,34 @@ router.post('/products/upload', authenticateToken, requireSuperAdmin, upload.sin
     for (const distributor of targetDistributors) {
       for (const row of jsonData) {
         try {
-          // Map Excel columns to product fields
+          // Helper to get value from multiple possible keys
+          const getVal = (keys) => {
+            for (const key of keys) {
+              if (row[key] !== undefined) {
+                return row[key]
+              }
+            }
+            return ''
+          }
+
+          // Helper to get numeric value
+          const getNumVal = (keys) => {
+            for (const key of keys) {
+              if (row[key] !== undefined) {
+                const val = row[key]
+                if (typeof val === 'number') return val
+                if (typeof val === 'string') {
+                  const parsed = parseFloat(val.replace(/[₹$€,]/g, ''))
+                  if (!isNaN(parsed)) return parsed
+                }
+              }
+            }
+            return 0
+          }
+
+          // Map columns to product fields
           let expiryDate = null
-          const rawExpiry = row['Expiry'] || row['Expiry Date'] || row['expiryDate'] || row['expiry']
+          const rawExpiry = getVal(['Expiry', 'Expiry Date', 'expiryDate', 'expiry'])
           if (rawExpiry) {
             if (typeof rawExpiry === 'string' && rawExpiry.includes('-')) {
               // If it's already an ISO-like date string (YYYY-MM-DD)
@@ -1452,26 +1713,39 @@ router.post('/products/upload', authenticateToken, requireSuperAdmin, upload.sin
             }
           }
 
+          const rawHsn = getVal(['HSN', 'HSN No', 'HSN Code', 'hsn', 'Hsn'])
+          const finalHsn = rawHsn ? String(rawHsn).trim() : null
+          
           const productData = {
-            name: row['Product Name'] || row['ProductName'] || row['name'] || row['Name'] || '',
-            sku: row['SKU'] || row['sku'] || row['Sku'] || '',
-            hsn: row['HSN'] || row['hsn'] || row['Hsn'] || null,
-            batchNo: row['Batch'] || row['Batch No'] || row['batchNo'] || row['batch'] || null,
+            name: getVal(['Product Name', 'ProductName', 'name', 'Name', 'Item', 'item', 'Item Name', 'Product', 'Description']),
+            sku: getVal(['SKU', 'sku', 'Sku', 'Item Code', 'ItemCode', 'Product Code', 'Code', 'Item No']),
+            hsn: finalHsn,
+            batchNo: getVal(['Batch', 'Batch No', 'batchNo', 'batch', 'Batch Number']),
             expiryDate,
-            costPrice: parseFloat(row['Cost Price'] || row['costPrice'] || row['cost'] || row['Cost'] || 0),
-            baseSellingPrice: parseFloat(row['Selling Price'] || row['Base Selling Price'] || row['sellingPrice'] || row['baseSellingPrice'] || row['price'] || row['Price'] || 0),
-            gstPercentage: parseFloat(row['GST%'] || row['GST'] || row['gstPercentage'] || row['gst'] || 0),
-            currentStock: parseInt(row['Stock'] || row['Current Stock'] || row['currentStock'] || row['quantity'] || row['Quantity'] || 0),
+            costPrice: getNumVal(['Cost Price', 'costPrice', 'cost', 'Cost', 'Rate', 'rate']),
+            baseSellingPrice: getNumVal(['Selling Price', 'Base Selling Price', 'sellingPrice', 'baseSellingPrice', 'price', 'Price', 'MRP']),
+            gstPercentage: getNumVal(['GST%', 'GST', 'gstPercentage', 'gst', 'Tax', 'Tax%']),
+            currentStock: Math.round(getNumVal(['Stock', 'Current Stock', 'currentStock', 'quantity', 'Quantity', 'qty', 'Qty', 'Qty.'])),
             distributorId: distributor.id
           }
 
+          console.log('=== Creating product ===')
+          console.log('Product data:', productData)
+          console.log('HSN value:', finalHsn, 'HSN type:', typeof finalHsn)
+          console.log('All fields types:', Object.entries(productData).map(([k,v]) => `${k}: ${typeof v}`))
+
+          // If SKU is missing and this is from a PDF, generate a temporary one
+          if (!productData.sku && isPdf) {
+            productData.sku = 'PDF-UPLOAD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+          }
+          
           // Validate required fields
-          if (!productData.name || !productData.sku || !productData.costPrice || !productData.baseSellingPrice || productData.gstPercentage === undefined) {
+          if (!productData.name || !productData.sku || productData.gstPercentage === undefined) {
             console.log('Skipping row (missing required fields):', row)
             totalSkipped++
             continue
           }
-
+          
           // Create product
           await prisma.product.create({
             data: productData

@@ -226,7 +226,7 @@ function CSAMyPurchase() {
           <input
             id="file-input-my"
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.pdf"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -249,7 +249,7 @@ function CSAMyPurchase() {
                 Drag & drop your invoice file here
               </div>
               <div className="text-xs md:text-sm text-gray-500">
-                or click to browse (Excel .xlsx, .xls, .csv)
+                or click to browse (Excel .xlsx, .xls, .csv, PDF .pdf)
               </div>
             </div>
           )}
