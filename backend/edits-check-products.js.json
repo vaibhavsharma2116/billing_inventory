@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1019,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Find existing products in database",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const products = await prisma.product.findMany({\n    take: 5\n  })\n  console.log('=== Products ===')\n  console.log(JSON.stringify(products, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Write script to list first 5 products",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\check-products.js",
+      "toolAction": "Creating script to view products",
+      "toolSummary": "Create check-products.js"
+    }
+  }
+]

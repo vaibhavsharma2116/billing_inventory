@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1509,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "A scratch script to search through transcript logs for outputs of view_file calls to recover the original pre-session file contents.",
+        "UserFacing": false
+      },
+      "CodeContent": "const fs = require('fs');\nconst readline = require('readline');\nconst path = require('path');\n\nconst brainDir = 'C:/Users/admin/.gemini/antigravity-ide/brain';\nconst conversations = [\n  'fe5f3da4-28e8-4953-b097-ce64bd94b483',\n  '53b57104-e4e2-40d0-adc5-813cc565893f'\n];\n\nasync function extractOriginals() {\n  for (const conv of conversations) {\n    const transcriptPath = path.join(brainDir, conv, '.system_generated', 'logs', 'transcript_full.jsonl');\n    if (!fs.existsSync(transcriptPath)) continue;\n\n    console.log(`Searching transcript of ${conv} for file reads...`);\n    const fileStream = fs.createReadStream(transcriptPath);\n    const rl = readline.createInterface({\n      input: fileStream,\n      crlfDelay: Infinity\n    });\n\n    for await (const line of rl) {\n      if (!line.trim()) continue;\n      const step = JSON.parse(line);\n\n      // We look for SYSTEM steps where the model called view_file in the previous step\n      if (step.source === 'SYSTEM' && step.content) {\n        // Find if this is a response to view_file\n        // Let's print some info\n        const contentStr = String(step.content);\n        if (contentStr.includes('File Path: `file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/purchase.js`')) {\n          console.log(`Found a view_file output for purchase.js in conversation ${conv}, step ${step.step_index}`);\n          // Let's write this output to a temporary file\n          const outPath = path.join(brainDir, '53b57104-e4e2-40d0-adc5-813cc565893f', 'scratch', `view_purchase_js_${conv}_step_${step.step_index}.txt`);\n          fs.writeFileSync(outPath, contentStr);\n          console.log(`Saved to ${outPath}`);\n        }\n        if (contentStr.includes('File Path: `file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/csa.js`')) {\n          console.log(`Found a view_file output for csa.js in conversation ${conv}, step ${step.step_index}`);\n          const outPath = path.join(brainDir, '53b57104-e4e2-40d0-adc5-813cc565893f', 'scratch', `view_csa_js_${conv}_step_${step.step_index}.txt`);\n          fs.writeFileSync(outPath, contentStr);\n          console.log(`Saved to ${outPath}`);\n        }\n      }\n    }\n  }\n}\n\nextractOriginals().catch(err => {\n  console.error(err);\n});\n",
+      "Description": "Create extract-original-files.js script to find file content log outputs.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\extract-original-files.js",
+      "toolAction": "Creating transcript file extractor",
+      "toolSummary": "Create scratch/extract-original-files.js"
+    }
+  }
+]

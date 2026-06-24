@@ -1,0 +1,35 @@
+[
+  {
+    "step_index": 1003,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Check database entries for specific invoice",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const invoice = await prisma.invoice.findFirst({\n    where: { invoiceNo: 'INV-1008' },\n    include: {\n      distributor: true,\n      invoiceItems: {\n        include: {\n          product: true\n        }\n      }\n    }\n  })\n  console.log('=== Invoice INV-1008 ===')\n  console.log(JSON.stringify(invoice, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Write script to check invoice details in Prisma",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\check-invoice.js",
+      "toolAction": "Creating script to check invoice",
+      "toolSummary": "Create check-invoice.js"
+    }
+  },
+  {
+    "step_index": 1011,
+    "name": "replace_file_content",
+    "args": {
+      "AllowMultiple": false,
+      "Description": "Change check-invoice.js query target to INV-1034",
+      "EndLine": 7,
+      "Instruction": "Change INV-1008 to INV-1034",
+      "ReplacementContent": "  const invoice = await prisma.invoice.findFirst({\n    where: { invoiceNo: 'INV-1034' },",
+      "StartLine": 5,
+      "TargetContent": "  const invoice = await prisma.invoice.findFirst({\n    where: { invoiceNo: 'INV-1008' },",
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\check-invoice.js",
+      "toolAction": "Changing target to INV-1034",
+      "toolSummary": "Update check-invoice.js"
+    }
+  }
+]

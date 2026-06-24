@@ -1,0 +1,14 @@
+[
+  {
+    "step_index": 566,
+    "name": "write_to_file",
+    "args": {
+      "CodeContent": "const fs = require('fs');\nconst path = 'c:\\\\Users\\\\admin\\\\Desktop\\\\billing_inventory\\\\backend\\\\src\\\\routes\\\\csa.js';\nconst fileContent = fs.readFileSync(path, 'utf8');\nconst lines = fileContent.split('\\n');\n\nconsole.log('Searching in csa.js...');\nlines.forEach((line, index) => {\n  if (line.includes('invoices') || line.includes('invoice') || line.includes('PurchaseLedger') || line.includes('PurchaseItem')) {\n    if (line.includes('create') || line.includes('post') || line.includes('PUT') || line.includes('router.')) {\n      console.log(`Line ${index + 1}: ${line.trim()}`);\n    }\n  }\n});\n",
+      "Description": "Find router endpoints in csa.js related to invoices or purchases",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\find_in_csa.js",
+      "toolAction": "Creating find_in_csa.js scratch script",
+      "toolSummary": "Create scratch script"
+    }
+  }
+]

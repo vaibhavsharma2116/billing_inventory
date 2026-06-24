@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 808,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Scratch script to list users from database to get login credentials.",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const users = await prisma.user.findMany({\n    select: {\n      name: true,\n      email: true,\n      role: true\n    }\n  })\n  console.log('=== User List ===')\n  console.log(JSON.stringify(users, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Created scratch script to list database users to find distributor login credentials.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\list-users.js",
+      "toolAction": "Writing user listing helper script",
+      "toolSummary": "User list helper write"
+    }
+  }
+]

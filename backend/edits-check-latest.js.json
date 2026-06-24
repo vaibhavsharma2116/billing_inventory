@@ -1,0 +1,14 @@
+[
+  {
+    "step_index": 1226,
+    "name": "write_to_file",
+    "args": {
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const purchase = await prisma.purchaseLedger.findFirst({\n    orderBy: { createdAt: 'desc' },\n    include: {\n      purchaseItems: {\n        include: {\n          product: true\n        }\n      }\n    }\n  })\n  console.log('=== Latest Purchase Ledger ===')\n  console.log(JSON.stringify(purchase, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Create a temporary script to print the latest purchase ledger details",
+      "Overwrite": true,
+      "TargetFile": "c:\\Users\\admin\\Desktop\\billing_inventory\\backend\\check-latest.js",
+      "toolAction": "Writing check-latest.js",
+      "toolSummary": "Write database check script"
+    }
+  }
+]

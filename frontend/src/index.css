@@ -17,6 +17,8 @@ body {
 }
 
 @media print {
+  @page { margin: 0; }
+  
   /* Better approach for printing modal content */
   body * {
     visibility: hidden !important;
@@ -25,6 +27,19 @@ body {
   .print-content,
   .print-content * {
     visibility: visible !important;
+  }
+  
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+  
+  .print-modal-parent {
+    position: absolute !important;
+    inset: 0 !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
   }
   
   /* Position the content properly */

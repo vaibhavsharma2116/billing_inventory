@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1027,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Populate INV-1008 with items",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const distId = 'cmpz457wx000erwfm7sdp79gx'\n  const invoiceId = 'cmqhix4ik000c429wqqx5dlu6' // INV-1008\n  \n  // Define products to create for this distributor\n  const prodTemplates = [\n    {\n      name: \"Poppik Liplock Liquid Matte Lipstick- 1\",\n      sku: \"SKU-1782221883345-teln6-clone\",\n      hsn: \"33041000\",\n      costPrice: \"117.1\",\n      baseSellingPrice: \"329\",\n      gstPercentage: \"18\"\n    },\n    {\n      name: \"Poppik Nailpaint- 24\",\n      sku: \"SKU-1782217958723-3sq8x-clone\",\n      hsn: \"33041000\",\n      costPrice: \"45.92\",\n      baseSellingPrice: \"129\",\n      gstPercentage: \"18\"\n    },\n    {\n      name: \"Poppik Ultra Lashlift Volumizing Mascara\",\n      sku: \"SKU-1782217958766-8hklu-clone\",\n      hsn: \"33041000\",\n      costPrice: \"106.06\",\n      baseSellingPrice: \"298\",\n      gstPercentage: \"18\"\n    }\n  ]\n\n  console.log('Creating products for distributor...')\n  const createdProducts = []\n  for (const template of prodTemplates) {\n    const prod = await prisma.product.create({\n      data: {\n        ...template,\n        currentStock: 100,\n        distributorId: distId\n      }\n    })\n    createdProducts.push(prod)\n  }\n\n  console.log('Creating invoice items for INV-1008...')\n  const item1 = await prisma.invoiceItem.create({\n    data: {\n      invoiceId: invoiceId,\n      productId: createdProducts[0].id,\n      distributorId: distId,\n      qty: 12,\n      costPrice: createdProducts[0].costPrice,\n      rate: createdProducts[0].costPrice,\n      gstPercentage: createdProducts[0].gstPercentage,\n      extraMarginPercentage: 20, // 20% margin\n      total: (12 * parseFloat(createdProducts[0].costPrice) * 0.8).toFixed(2)\n    }\n  })\n\n  const item2 = await prisma.invoiceItem.create({\n    data: {\n      invoiceId: invoiceId,\n      productId: createdProducts[1].id,\n      distributorId: distId,\n      qty: 24,\n      costPrice: createdProducts[1].costPrice,\n      rate: createdProducts[1].costPrice,\n      gstPercentage: createdProducts[1].gstPercentage,\n      extraMarginPercentage: 15,\n      total: (24 * parseFloat(createdProducts[1].costPrice) * 0.85).toFixed(2)\n    }\n  })\n\n  const item3 = await prisma.invoiceItem.create({\n    data: {\n      invoiceId: invoiceId,\n      productId: createdProducts[2].id,\n      distributorId: distId,\n      qty: 6,\n      costPrice: createdProducts[2].costPrice,\n      rate: createdProducts[2].costPrice,\n      gstPercentage: createdProducts[2].gstPercentage,\n      extraMarginPercentage: 0,\n      total: (6 * parseFloat(createdProducts[2].costPrice)).toFixed(2)\n    }\n  })\n\n  // Update invoice totals\n  const totalVal = parseFloat(item1.total) + parseFloat(item2.total) + parseFloat(item3.total)\n  const taxable = totalVal / 1.18\n  const gst = totalVal - taxable\n  \n  await prisma.invoice.update({\n    where: { id: invoiceId },\n    data: {\n      taxableValue: taxable.toFixed(2),\n      cgst: (gst / 2).toFixed(2),\n      sgst: (gst / 2).toFixed(2),\n      igst: 0,\n      grandTotal: totalVal.toFixed(2)\n    }\n  })\n\n  console.log('Seeding completed successfully!')\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Create populate-invoice-1008.js script",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\populate-invoice-1008.js",
+      "toolAction": "Creating script to populate INV-1008",
+      "toolSummary": "Create populate-invoice-1008.js"
+    }
+  }
+]

@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1007,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Find invoices with items in database",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const invoices = await prisma.invoice.findMany({\n    include: {\n      _count: {\n        select: { invoiceItems: true }\n      }\n    }\n  })\n  console.log('=== Invoices and Item Counts ===')\n  invoices.forEach(inv => {\n    console.log(`Invoice ID: ${inv.id}, InvoiceNo: ${inv.invoiceNo}, Items count: ${inv._count.invoiceItems}, Grand Total: ${inv.grandTotal}`)\n  })\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Create script to list item counts for all invoices",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\check-all-invoices.js",
+      "toolAction": "Creating script to list all invoices",
+      "toolSummary": "Create check-all-invoices.js"
+    }
+  }
+]

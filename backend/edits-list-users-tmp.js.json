@@ -1,0 +1,31 @@
+[
+  {
+    "step_index": 812,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Temporary user listing script in the backend folder.",
+        "UserFacing": false
+      },
+      "CodeContent": "const prisma = require('./src/lib/prisma')\n\nasync function main() {\n  const users = await prisma.user.findMany({\n    select: {\n      name: true,\n      email: true,\n      role: true\n    }\n  })\n  console.log('=== User List ===')\n  console.log(JSON.stringify(users, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Created temporary script inside the backend project folder so Node can resolve the prisma client relative to the project.",
+      "Overwrite": true,
+      "TargetFile": "c:\\Users\\admin\\Desktop\\billing_inventory\\backend\\list-users-tmp.js",
+      "toolAction": "Creating temporary list-users script in backend",
+      "toolSummary": "Backend list users helper write"
+    }
+  },
+  {
+    "step_index": 814,
+    "name": "write_to_file",
+    "args": {
+      "CodeContent": "const prisma = require('./src/lib/prisma')\n\nasync function main() {\n  const users = await prisma.user.findMany({\n    select: {\n      name: true,\n      email: true,\n      role: true\n    }\n  })\n  console.log('=== User List ===')\n  console.log(JSON.stringify(users, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Created temporary script in backend project to list database users.",
+      "Overwrite": true,
+      "TargetFile": "c:\\Users\\admin\\Desktop\\billing_inventory\\backend\\list-users-tmp.js",
+      "toolAction": "Creating list-users-tmp.js in backend workspace",
+      "toolSummary": "Workspace file write"
+    }
+  }
+]

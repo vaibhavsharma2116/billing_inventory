@@ -1,0 +1,36 @@
+[
+  {
+    "step_index": 772,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": true,
+        "Summary": "Implementation plan to design and display the Poppik Lifestyle Tax Invoice in the printed views of CSAMyInvoices and Purchase, and fetch distributor details for purchases on the backend.",
+        "UserFacing": true
+      },
+      "CodeContent": "# Implementation Plan - Poppik Lifestyle Tax Invoice for CSAMyInvoices and Purchase\n\nThis plan describes how we will update the print/PDF invoice layouts in both the CSA's Invoice List (`CSAMyInvoices.jsx`) and the Distributor's Purchase List (`Purchase.jsx`) to look exactly like the POPPIK LIFESTYLE PVT LTD Tax Invoice image shared by the user.\n\n## User Review Required\n\n> [!IMPORTANT]\n> - The print-only views in `CSAMyInvoices.jsx` and `Purchase.jsx` will be redesigned to render a gold-themed \"POPPIK LIFESTYLE PVT LTD\" Tax Invoice.\n> - The PAN of the distributor will be dynamically extracted from their GSTIN (characters 3 to 12).\n> - On-screen modal views will remain clean and standard as requested by the user previously, while printing/saving as PDF will trigger the high-fidelity invoice design.\n\n## Proposed Changes\n\n### Backend Route Modification\n\n#### [MODIFY] [purchase.js](file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/purchase.js)\n- Update the GET single purchase endpoint `router.get('/:id')` to include the `distributor` relation so that the distributor's company name, city, phone, and GSTIN are available for rendering in the purchase print layout.\n\n---\n\n### Frontend Component Modifications\n\n#### [MODIFY] [CSAMyInvoices.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/CSAMyInvoices.jsx)\n- Redesign the `hidden print:block` print-only section:\n  - Add Poppik Lifestyle header with company address, email, phone, web, PAN, and GSTIN.\n  - Implement two-column Bill To / Ship To section showing Distributor's company name, city, mobile, GSTIN, PAN, and Place of Supply.\n  - Render the item table matching the image with:\n    - MRP column showing the MRP and calculated `[OFF %]` below it.\n    - Rate column showing the taxable rate (excluding GST).\n    - Disc. column showing the margin discount amount and margin % below it.\n    - Tax column showing the GST amount and GST % below it.\n    - Total column showing the final item total.\n  - Add totals at the bottom showing Taxable Value, CGST, SGST, IGST (if interstate), and Grand Total.\n\n#### [MODIFY] [Purchase.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/Purchase.jsx)\n- Redesign the View Purchase Modal's print section:\n  - Fetch purchase details including distributor data from backend.\n  - Render the identical gold-themed Poppik Lifestyle Tax Invoice matching the image under print mode.\n  - Match all calculations (Rate excluding GST, MRP discount %, margin discount amount, GST tax amount, item total).\n\n---\n\n## Verification Plan\n\n### Automated Tests\n- None.\n\n### Manual Verification\n1. Run backend and frontend servers.\n2. **CSA Invoice Print**:\n   - Log in as CSA, go to `/csa/my-invoices`.\n   - Click **View** on any invoice, click **Download PDF**.\n   - Verify the printed document has a gold border, Poppik Lifestyle headers, Bill To/Ship To blocks, and correct columns (MRP with Off %, Rate excl. GST, Margin Disc, GST Tax, and Total).\n3. **Distributor Purchase Print**:\n   - Log in as Distributor, go to `/purchase`.\n   - Click **View** (Eye icon) on any purchase, click **Download PDF**.\n   - Verify the printed document is styled exactly like the CSA invoice print layout, matching the POPPIK LIFESTYLE Tax Invoice image.\n",
+      "Description": "Created implementation plan to redesign printed views in CSAMyInvoices and Purchase components, matching the POPPIK LIFESTYLE Tax Invoice format from the user's shared image.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\implementation_plan.md",
+      "toolAction": "Creating implementation plan for Poppik Lifestyle Tax Invoice design",
+      "toolSummary": "Implementation plan creation"
+    }
+  },
+  {
+    "step_index": 1758,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": true,
+        "Summary": "Implementation plan to recover lost code from accidental git revert",
+        "UserFacing": true
+      },
+      "CodeContent": "# Reconstruct Reverted Code\n\nThe project suffered an accidental `git reset --hard` which wiped out the Gemini OCR integrations, purchase detail routes (`/:id`), and premium invoice designs that were implemented in our recent sessions. \n\n## Goal\nReconstruct the `purchase.js` and `csa.js` backend routes, as well as their corresponding frontend components (`Purchase.jsx`, `CSAMyInvoices.jsx`, etc.) using the metadata saved in the `extracted-edits.json` backups.\n\n## Open Questions\n- Since the files `purchase.js` and `csa.js` were completely reverted, I will manually patch the missing Gemini OCR code and the `router.get('/:id')` detail routes back into them. Do you want me to restore the frontend premium invoice layout design as well?\n\n## Proposed Changes\n\n### Backend Routes\n#### [MODIFY] [purchase.js](file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/purchase.js)\n- Restore `router.get('/:id')` detail route to fetch single purchases with `distributor` relations.\n- Re-add the Gemini OCR multimodal parsing block for handling PDF invoice uploads.\n- Include proper error handling when Gemini API keys are missing.\n\n#### [MODIFY] [csa.js](file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/csa.js)\n- Re-add Gemini OCR integration for CSA invoice uploads.\n\n### Frontend Components\n#### [MODIFY] [Purchase.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/Purchase.jsx)\n- Restore the premium POPPIK LIFESTYLE invoice design.\n- Re-add proper discount, MRP, and Tax calculations in the UI.\n\n#### [MODIFY] [CSAMyInvoices.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/CSAMyInvoices.jsx)\n- Restore the print view logic and layout.\n\n#### [MODIFY] [CSAMyPurchase.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/CSAMyPurchase.jsx)\n- Restore the unique supplier ID logic and resolve React duplicate keys warnings.\n\n## Verification Plan\n1. Start the backend server and ensure it parses PDF uploads with Gemini OCR without errors.\n2. View the invoice in the UI to confirm the premium design is visible and the layout does not break.\n3. Check the browser console to ensure there are no React key warnings.",
+      "Description": "Creating implementation plan for recovering code.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\implementation_plan.md",
+      "toolAction": "Writing implementation plan",
+      "toolSummary": "Write implementation plan"
+    }
+  }
+]

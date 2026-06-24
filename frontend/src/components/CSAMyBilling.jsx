@@ -153,14 +153,19 @@ function CSAMyBilling() {
   }
 
   const addProduct = (product) => {
+    const mrp = parseFloat(product.baseSellingPrice) || 0;
+    const rate = mrp * 0.50;
+
     const newItem = {
       id: Date.now(),
       productId: product.id,
       productName: typeof product.name === 'string' ? product.name : 'Unnamed Product',
       sku: typeof product.sku === 'string' ? product.sku : '-',
+      hsn: typeof product.hsn === 'string' ? product.hsn : '-',
+      mrp: mrp,
       batchNo: typeof product.batchNo === 'string' ? product.batchNo : '',
       qty: 1,
-      rate: parseFloat(product.baseSellingPrice) || 0,
+      rate: rate,
       gstPercentage: parseFloat(product.gstPercentage) || 0,
       extraMarginPercentage: 0
     }
@@ -186,17 +191,21 @@ function CSAMyBilling() {
   }
 
   const calculateItemTotals = (item) => {
-    const rate = parseFloat(item.rate) || 0
+    const rate = parseFloat(item.rate) || 0 // Rate is inclusive of GST
     const extraMarginPercentage = parseFloat(item.extraMarginPercentage) || 0
     const gstPercentage = parseFloat(item.gstPercentage) || 0
     const qty = parseInt(item.qty) || 0
     
-    const rateWithMargin = rate * (1 + (extraMarginPercentage / 100))
-    const taxable = qty * rateWithMargin
-    const gstAmount = (taxable * gstPercentage) / 100
+    const rateWithMargin = rate * (1 - (extraMarginPercentage / 100))
+    const total = qty * rateWithMargin
+    
+    // Calculate taxable value by removing GST from the total
+    const taxable = total / (1 + (gstPercentage / 100))
+    const gstAmount = total - taxable
+    
     const cgst = gstAmount / 2
     const sgst = gstAmount / 2
-    const total = taxable + cgst + sgst
+    
     return { rateWithMargin, taxable, cgst, sgst, total }
   }
 
@@ -266,11 +275,12 @@ function CSAMyBilling() {
       if (!res.ok) throw new Error(data.error)
       setSavedInvoice(data)
       if (shouldPrint) {
-        setTimeout(() => window.print(), 100)
+        navigate('/csa/my-invoices', { state: { printInvoiceId: data.id } })
+      } else {
+        setTimeout(() => {
+          navigate('/csa/my-invoices')
+        }, 1500)
       }
-      setTimeout(() => {
-        navigate('/csa/my-invoices')
-      }, 1500)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -436,6 +446,8 @@ function CSAMyBilling() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-3 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
+                  <th className="px-3 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN No.</th>
+                  <th className="px-3 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MRP</th>
                   <th className="px-3 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch</th>
                   <th className="px-3 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
                   <th className="px-3 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
@@ -464,6 +476,8 @@ function CSAMyBilling() {
                           <div className="font-medium text-gray-800">{typeof item.productName === 'string' ? item.productName : '-'}</div>
                           <div className="text-xs text-gray-500">{typeof item.sku === 'string' ? item.sku : '-'}</div>
                         </td>
+                        <td className="px-3 md:px-6 py-4 text-gray-600">{item.hsn || '-'}</td>
+                        <td className="px-3 md:px-6 py-4 text-gray-600">{item.mrp !== undefined ? `₹${(parseFloat(item.mrp) || 0).toFixed(2)}` : '-'}</td>
                         <td className="px-3 md:px-6 py-4 text-gray-600">{(typeof item.batchNo === 'string' && item.batchNo) ? item.batchNo : '-'}</td>
                         <td className="px-3 md:px-6 py-4">
                           {savedInvoice ? (
@@ -569,6 +583,24 @@ function CSAMyBilling() {
           </div>
         )}
       </div>
+
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body {
+            background: white !important;
+          }
+          header, footer, nav, button, .no-print {
+            display: none !important;
+          }
+          main {
+            margin-left: 0 !important;
+          }
+          .print-modal-overlay {
+            display: block !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

@@ -1,0 +1,14 @@
+[
+  {
+    "step_index": 576,
+    "name": "write_to_file",
+    "args": {
+      "CodeContent": "const fs = require('fs');\nconst path = 'c:\\\\Users\\\\admin\\\\Desktop\\\\billing_inventory\\\\backend\\\\src\\\\routes\\\\purchase.js';\nconst fileContent = fs.readFileSync(path, 'utf8');\nconst lines = fileContent.split('\\n');\n\nconsole.log('Searching in purchase.js...');\nlines.forEach((line, index) => {\n  if (line.includes('router.get') || line.includes('router.post')) {\n    console.log(`Line ${index + 1}: ${line.trim()}`);\n  }\n});\n",
+      "Description": "Find GET and POST endpoints in purchase.js",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\find_in_purchase.js",
+      "toolAction": "Creating find_in_purchase.js scratch script",
+      "toolSummary": "Create scratch script for purchase.js"
+    }
+  }
+]

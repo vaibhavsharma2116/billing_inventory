@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1023,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Find products for a specific distributor",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const products = await prisma.product.findMany({\n    where: { distributorId: 'cmpz457wx000erwfm7sdp79gx' }\n  })\n  console.log('=== Products for Distributor cmpz457wx000erwfm7sdp79gx ===')\n  console.log(JSON.stringify(products, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Write script to query products for a distributor ID",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\check-distributor-products.js",
+      "toolAction": "Creating script to check distributor products",
+      "toolSummary": "Create check-distributor-products.js"
+    }
+  }
+]

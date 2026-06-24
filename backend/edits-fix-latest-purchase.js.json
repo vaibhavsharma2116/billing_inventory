@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1178,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Correct latest purchase item mismatch in database",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const purchaseId = 'cmqr0ie3h000ntjprncxymsds'\n  const productId = 'cmqr0ie3w000ptjpr64bdej4j'\n\n  console.log('Updating purchase item values...')\n  await prisma.purchaseItem.updateMany({\n    where: { purchaseId },\n    data: {\n      costPrice: 54.66,\n      rate: 54.66,\n      gstPercentage: 18\n    }\n  })\n\n  console.log('Updating product values in catalog...')\n  await prisma.product.update({\n    where: { id: productId },\n    data: {\n      costPrice: 54.66,\n      gstPercentage: 18\n    }\n  })\n\n  console.log('Database correction completed successfully!')\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Create fix-latest-purchase.js to clean up database entries",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\fix-latest-purchase.js",
+      "toolAction": "Creating database correction script",
+      "toolSummary": "Create fix-latest-purchase.js"
+    }
+  }
+]

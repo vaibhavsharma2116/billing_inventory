@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Eye, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -29,6 +30,7 @@ function CSAMySalesReturns() {
   const [error, setError] = useState('')
   const [savedReturn, setSavedReturn] = useState(null)
   const [showList, setShowList] = useState(false)
+  const [viewReturn, setViewReturn] = useState(null)
   const printRef = useRef(null)
   const productDropdownRef = useRef(null)
   const distributorDropdownRef = useRef(null)
@@ -92,7 +94,9 @@ function CSAMySalesReturns() {
     try {
       const res = await fetch(`${API_URL}/csa/my-sales-returns`, { headers: getAuthHeaders() })
       if (res.ok) {
-        setSalesReturns(await res.json())
+        const data = await res.json()
+        data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        setSalesReturns(data)
       }
     } catch (err) {
       console.error('Failed to fetch sales returns:', err)
@@ -105,14 +109,19 @@ function CSAMySalesReturns() {
   )
 
   const addProduct = (product) => {
+    const mrp = parseFloat(product.baseSellingPrice) || 0;
+    const rate = mrp * 0.50;
+
     const newItem = {
       id: Date.now(),
       productId: product.id,
       productName: typeof product.name === 'string' ? product.name : 'Unnamed Product',
       sku: typeof product.sku === 'string' ? product.sku : '-',
+      hsn: typeof product.hsn === 'string' ? product.hsn : '-',
+      mrp: mrp,
       batchNo: typeof product.batchNo === 'string' ? product.batchNo : '',
       qty: 1,
-      rate: parseFloat(product.baseSellingPrice) || 0,
+      rate: rate,
       costPrice: parseFloat(product.costPrice) || 0,
       gstPercentage: parseFloat(product.gstPercentage) || 0
     }
@@ -132,14 +141,19 @@ function CSAMySalesReturns() {
   }
 
   const calculateItemTotals = (item) => {
-    const rate = parseFloat(item.rate) || 0
+    const rate = parseFloat(item.rate) || 0 // Rate is inclusive of GST
     const qty = parseInt(item.qty) || 0
     const gstPercentage = parseFloat(item.gstPercentage) || 0
-    const taxable = qty * rate
-    const gstAmount = (taxable * gstPercentage) / 100
+    
+    const total = qty * rate
+    
+    // Calculate taxable value by removing GST from the total
+    const taxable = total / (1 + (gstPercentage / 100))
+    const gstAmount = total - taxable
+    
     const cgst = gstAmount / 2
     const sgst = gstAmount / 2
-    const total = taxable + cgst + sgst
+    
     return { taxable, cgst, sgst, total }
   }
 
@@ -256,28 +270,40 @@ function CSAMySalesReturns() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">S.No.</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Return No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Distributor</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {salesReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={8} className="px-6 py-10 text-center text-gray-500">
                       No sales returns yet
                     </td>
                   </tr>
                 ) : (
-                  salesReturns.map(sr => (
+                  salesReturns.map((sr, idx) => (
                     <tr key={sr.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-600">{idx + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{sr.returnNo}</td>
                       <td className="px-4 py-3 text-gray-600">{sr.distributor?.companyName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(sr.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-gray-600">{sr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(sr.grandTotal)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => setViewReturn(sr)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="View Details"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -391,8 +417,10 @@ function CSAMySalesReturns() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN No.</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MRP</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Taxable</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GST%</th>
@@ -405,7 +433,7 @@ function CSAMySalesReturns() {
                 <tbody className="divide-y divide-gray-200">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={savedReturn ? 7 : 8} className="px-4 md:px-6 py-10 text-center text-gray-500">
+                      <td colSpan={savedReturn ? 9 : 10} className="px-4 md:px-6 py-10 text-center text-gray-500">
                         No items added yet
                       </td>
                     </tr>
@@ -418,6 +446,7 @@ function CSAMySalesReturns() {
                             <div className="font-medium text-gray-800">{typeof item.productName === 'string' ? item.productName : '-'}</div>
                             <div className="text-xs text-gray-500">{typeof item.sku === 'string' ? item.sku : '-'}</div>
                           </td>
+                          <td className="px-3 md:px-4 py-3 text-gray-600">{item.hsn || '-'}</td>
                           <td className="px-3 md:px-4 py-3 text-gray-600">{(typeof item.batchNo === 'string' && item.batchNo) ? item.batchNo : '-'}</td>
                           <td className="px-3 md:px-4 py-3">
                             {savedReturn ? (
@@ -432,6 +461,7 @@ function CSAMySalesReturns() {
                               />
                             )}
                           </td>
+                          <td className="px-3 md:px-4 py-3 text-gray-700">₹{(parseFloat(item.mrp) || 0).toFixed(2)}</td>
                           <td className="px-3 md:px-4 py-3">
                             {savedReturn ? (
                               <span className="font-medium">₹{(parseFloat(item.rate) || 0).toFixed(2)}</span>
@@ -517,6 +547,117 @@ function CSAMySalesReturns() {
           }
         }
       `}</style>
+      {/* View Return Modal */}
+      {viewReturn && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h2 className="text-xl font-bold text-gray-800">Return Details: {viewReturn.returnNo}</h2>
+              <button
+                onClick={() => setViewReturn(null)}
+                className="p-2 text-gray-500 hover:bg-gray-200 rounded-full transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Return No</div>
+                  <div className="font-medium text-gray-900">{viewReturn.returnNo}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Date</div>
+                  <div className="font-medium text-gray-900">{new Date(viewReturn.createdAt).toLocaleDateString()}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Distributor</div>
+                  <div className="font-medium text-gray-900">{viewReturn.distributor?.companyName || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Reason</div>
+                  <div className="font-medium text-gray-900">{viewReturn.reason || '-'}</div>
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[700px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN No.</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Taxable</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GST%</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {viewReturn.salesReturnItems && viewReturn.salesReturnItems.map((item, idx) => {
+                        const rate = parseFloat(item.rate) || 0
+                        const qty = item.qty || 0
+                        const gstPercentage = parseFloat(item.product?.gstPercentage) || parseFloat(item.gstPercentage) || 0
+                        const total = qty * rate
+                        const taxable = total / (1 + (gstPercentage / 100))
+                        
+                        return (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-gray-800">{item.product?.name || '-'}</div>
+                              <div className="text-xs text-gray-500">{item.product?.sku || '-'}</div>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{item.product?.hsn || '-'}</td>
+                            <td className="px-4 py-3 text-gray-600">{item.batchNo || '-'}</td>
+                            <td className="px-4 py-3 font-medium">{qty}</td>
+                            <td className="px-4 py-3 text-gray-700">₹{rate.toFixed(2)}</td>
+                            <td className="px-4 py-3 text-gray-700">₹{taxable.toFixed(2)}</td>
+                            <td className="px-4 py-3 text-gray-700">{gstPercentage}%</td>
+                            <td className="px-4 py-3 font-medium text-gray-900">₹{total.toFixed(2)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="bg-gray-50 border-t border-gray-200 p-4 md:p-6">
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="flex items-center gap-4 md:gap-8">
+                      <span className="text-gray-600 text-sm md:text-base">Taxable Value:</span>
+                      <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.taxableValue) || 0).toFixed(2)}</span>
+                    </div>
+                    {(parseFloat(viewReturn.cgst) > 0 || parseFloat(viewReturn.sgst) > 0) ? (
+                      <>
+                        <div className="flex items-center gap-4 md:gap-8">
+                          <span className="text-gray-600 text-sm md:text-base">CGST:</span>
+                          <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.cgst) || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center gap-4 md:gap-8">
+                          <span className="text-gray-600 text-sm md:text-base">SGST:</span>
+                          <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.sgst) || 0).toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-4 md:gap-8">
+                        <span className="text-gray-600 text-sm md:text-base">IGST:</span>
+                        <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.igst) || 0).toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-gray-300 pt-2 flex items-center gap-4 md:gap-8">
+                      <span className="text-base md:text-lg font-semibold text-gray-800">Grand Total:</span>
+                      <span className="text-lg md:text-xl font-bold text-red-600">₹{(parseFloat(viewReturn.grandTotal) || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

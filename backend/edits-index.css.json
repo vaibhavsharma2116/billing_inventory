@@ -1,0 +1,16 @@
+[
+  {
+    "step_index": 351,
+    "name": "replace_file_content",
+    "args": {
+      "AllowMultiple": false,
+      "Description": "Applied print table font-size, layout-auto, and min-width overrides to both print-content and print-area in index.css",
+      "EndLine": 118,
+      "Instruction": "Add #print-area table styles and set min-width: 0 !important to table styles under print",
+      "ReplacementContent": "  /* Adjust table for better print alignment and sizing */\n  .print-content table,\n  #print-area table {\n    width: 100% !important;\n    min-width: 0 !important;\n    border-collapse: collapse !important;\n    table-layout: auto !important;\n  }\n  \n  .print-content th,\n  .print-content td,\n  #print-area th,\n  #print-area td {\n    border: 1px solid #e5e7eb !important;\n    font-size: 11px !important;\n    padding: 5px 3px !important;\n    width: auto !important;\n    white-space: normal !important;\n    word-break: break-word !important;\n  }\n\n  /* Retain nowrap class for specific columns like rates/prices/qty */\n  .print-content td.whitespace-nowrap,\n  #print-area td.whitespace-nowrap {\n    white-space: nowrap !important;\n  }\n}",
+      "StartLine": 97,
+      "TargetContent": "  /* Adjust table for better print alignment and sizing */\n  .print-content table {\n    width: 100% !important;\n    border-collapse: collapse !important;\n    table-layout: auto !important;\n  }\n  \n  .print-content th,\n  .print-content td {\n    border: 1px solid #e5e7eb !important;\n    font-size: 11px !important;\n    padding: 5px 3px !important;\n    width: auto !important;\n    white-space: normal !important;\n    word-break: break-word !important;\n  }\n\n  /* Retain nowrap class for specific columns like rates/prices/qty */\n  .print-content td.whitespace-nowrap {\n    white-space: nowrap !important;\n  }\n}",
+      "TargetFile": "c:\\Users\\admin\\Desktop\\billing_inventory\\frontend\\src\\index.css"
+    }
+  }
+]

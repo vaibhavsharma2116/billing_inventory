@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Eye } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27'
@@ -29,6 +30,7 @@ function CSAMyPurchaseReturns() {
   const [error, setError] = useState('')
   const [savedReturn, setSavedReturn] = useState(null)
   const [showList, setShowList] = useState(false)
+  const [viewReturn, setViewReturn] = useState(null)
   
   const productDropdownRef = useRef(null)
   const supplierDropdownRef = useRef(null)
@@ -61,11 +63,11 @@ function CSAMyPurchaseReturns() {
   }
 
   const filteredSuppliers = suppliers.filter(s => 
-    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
+    s?.name?.toLowerCase().includes(supplierName.toLowerCase())
   )
 
   const selectSupplier = (supplier) => {
-    setSupplierName(supplier)
+    setSupplierName(supplier.name)
     setShowSupplierDropdown(false)
   }
 
@@ -106,6 +108,8 @@ function CSAMyPurchaseReturns() {
       productId: product.id,
       productName: typeof product.name === 'string' ? product.name : 'Unnamed Product',
       sku: typeof product.sku === 'string' ? product.sku : '-',
+      hsn: typeof product.hsn === 'string' ? product.hsn : '-',
+      mrp: parseFloat(product.baseSellingPrice) || 0,
       qty: 1,
       costPrice: parseFloat(product.costPrice) || 0,
       gstPercentage: parseFloat(product.gstPercentage) || 0
@@ -247,11 +251,13 @@ function CSAMyPurchaseReturns() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">No.</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Return No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -262,13 +268,19 @@ function CSAMyPurchaseReturns() {
                     </td>
                   </tr>
                 ) : (
-                  purchaseReturns.map(pr => (
+                  purchaseReturns.map((pr, index) => (
                     <tr key={pr.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-800">{index + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{pr.returnNo}</td>
                       <td className="px-4 py-3 text-gray-600">{pr.supplierName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(pr.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-gray-600">{pr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(pr.grandTotal)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => setViewReturn(pr)} className="text-blue-600 hover:text-blue-800" title="View Return">
+                          <Eye className="w-5 h-5" />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -294,11 +306,11 @@ function CSAMyPurchaseReturns() {
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                   {filteredSuppliers.map((supplier, index) => (
                     <div
-                      key={index}
+                      key={supplier.id || index}
                       onClick={() => selectSupplier(supplier)}
                       className="px-4 py-3 hover:bg-red-50 cursor-pointer"
                     >
-                      <div className="font-medium text-gray-800">{supplier}</div>
+                      <div className="font-medium text-gray-800">{supplier.name}</div>
                     </div>
                   ))}
                 </div>
@@ -363,8 +375,10 @@ function CSAMyPurchaseReturns() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
-                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
-                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Cost Price</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN No.</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty.</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MRP</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Taxable</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GST%</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Total</th>
@@ -389,6 +403,7 @@ function CSAMyPurchaseReturns() {
                             <div className="font-medium text-gray-800">{typeof item.productName === 'string' ? item.productName : '-'}</div>
                             <div className="text-xs text-gray-500">{typeof item.sku === 'string' ? item.sku : '-'}</div>
                           </td>
+                          <td className="px-3 md:px-4 py-3 text-gray-600">{item.hsn || '-'}</td>
                           <td className="px-3 md:px-4 py-3">
                             {savedReturn ? (
                               <span className="font-medium">{item.qty}</span>
@@ -402,6 +417,7 @@ function CSAMyPurchaseReturns() {
                               />
                             )}
                           </td>
+                          <td className="px-3 md:px-4 py-3 text-gray-600">₹{(parseFloat(item.mrp) || 0).toFixed(2)}</td>
                           <td className="px-3 md:px-4 py-3">
                             {savedReturn ? (
                               <span className="font-medium">₹{(parseFloat(item.costPrice) || 0).toFixed(2)}</span>
@@ -473,6 +489,75 @@ function CSAMyPurchaseReturns() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* View Return Modal */}
+      {viewReturn && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h2 className="text-xl font-bold text-gray-800">Return Details - {viewReturn.returnNo}</h2>
+              <button onClick={() => setViewReturn(null)} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div>
+                  <p className="text-sm text-gray-500">Supplier</p>
+                  <p className="font-semibold text-gray-800">{viewReturn.supplierName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Date</p>
+                  <p className="font-semibold text-gray-800">{new Date(viewReturn.createdAt).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Reason</p>
+                  <p className="font-semibold text-gray-800">{viewReturn.reason || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total Amount</p>
+                  <p className="font-semibold text-red-600">{formatCurrency(viewReturn.grandTotal)}</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-y border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">HSN No.</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Qty.</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">MRP</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Rate</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">GST%</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {viewReturn.purchaseReturnItems?.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-800">{item.product?.name || 'Unknown'}</div>
+                          <div className="text-xs text-gray-500">SKU: {item.product?.sku || '-'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{item.product?.hsn || '-'}</td>
+                        <td className="px-4 py-3 text-gray-800 font-medium">{item.qty}</td>
+                        <td className="px-4 py-3 text-gray-600">₹{parseFloat(item.product?.baseSellingPrice || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-gray-600">₹{parseFloat(item.costPrice || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-gray-600">{item.gstPercentage}%</td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-800">
+                          ₹{item.total}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

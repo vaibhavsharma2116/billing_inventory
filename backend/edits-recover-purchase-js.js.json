@@ -1,0 +1,36 @@
+[
+  {
+    "step_index": 1552,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "A scratch script to recover the pre-revert purchase.js file contents from the logged view_file outputs in the transcript.",
+        "UserFacing": false
+      },
+      "CodeContent": "const fs = require('fs');\nconst readline = require('readline');\nconst path = require('path');\n\nconst transcriptPath = 'C:/Users/admin/.gemini/antigravity-ide/brain/53b57104-e4e2-40d0-adc5-813cc565893f/.system_generated/logs/transcript_full.jsonl';\n\nasync function recover() {\n  const fileStream = fs.createReadStream(transcriptPath);\n  const rl = readline.createInterface({\n    input: fileStream,\n    crlfDelay: Infinity\n  });\n\n  const parts = [];\n\n  for await (const line of rl) {\n    if (!line.trim()) continue;\n    const step = JSON.parse(line);\n\n    if (step.source === 'SYSTEM' && step.content) {\n      const content = String(step.content);\n      if (content.includes('File Path: `file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/purchase.js`')) {\n        // Find which lines were shown\n        const match = content.match(/Showing lines (\\d+) to (\\d+)/);\n        if (match) {\n          const start = parseInt(match[1]);\n          const end = parseInt(match[2]);\n          console.log(`Found snippet from step ${step.step_index}: showing lines ${start} to ${end}`);\n          parts.push({\n            step: step.step_index,\n            start,\n            end,\n            content\n          });\n        }\n      }\n    }\n  }\n\n  // Sort parts by start line\n  parts.sort((a, b) => a.start - b.start);\n\n  // Let's reconstruct the file if we have all lines\n  // Let's print out what ranges we have\n  parts.forEach(p => {\n    console.log(`Range: ${p.start} - ${p.end} (from step ${p.step})`);\n  });\n}\n\nrecover().catch(err => console.error(err));\n",
+      "Description": "Create recover-purchase-js.js script to list all snippets of purchase.js.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\recover-purchase-js.js",
+      "toolAction": "Creating code reconstruction script",
+      "toolSummary": "Create scratch/recover-purchase-js.js"
+    }
+  },
+  {
+    "step_index": 1556,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "An updated scratch script to recover the pre-revert purchase.js file contents from the logged view_file outputs using regex.",
+        "UserFacing": false
+      },
+      "CodeContent": "const fs = require('fs');\nconst readline = require('readline');\nconst path = require('path');\n\nconst transcriptPath = 'C:/Users/admin/.gemini/antigravity-ide/brain/53b57104-e4e2-40d0-adc5-813cc565893f/.system_generated/logs/transcript_full.jsonl';\n\nasync function recover() {\n  const fileStream = fs.createReadStream(transcriptPath);\n  const rl = readline.createInterface({\n    input: fileStream,\n    crlfDelay: Infinity\n  });\n\n  const parts = [];\n\n  for await (const line of rl) {\n    if (!line.trim()) continue;\n    const step = JSON.parse(line);\n\n    if (step.source === 'SYSTEM' && step.content) {\n      const content = String(step.content);\n      if (/purchase\\.js/i.test(content) && /Showing lines \\d+ to \\d+/i.test(content)) {\n        // Find which lines were shown\n        const match = content.match(/Showing lines (\\d+) to (\\d+)/i);\n        if (match) {\n          const start = parseInt(match[1]);\n          const end = parseInt(match[2]);\n          console.log(`Found snippet from step ${step.step_index}: showing lines ${start} to ${end}`);\n          parts.push({\n            step: step.step_index,\n            start,\n            end,\n            content\n          });\n        }\n      }\n    }\n  }\n\n  // Sort parts by start line\n  parts.sort((a, b) => a.start - b.start);\n\n  // Let's print out what ranges we have\n  parts.forEach(p => {\n    console.log(`Range: ${p.start} - ${p.end} (from step ${p.step})`);\n    \n    // Write each snippet to a file in scratch\n    const outPath = path.join('C:/Users/admin/.gemini/antigravity-ide/brain/53b57104-e4e2-40d0-adc5-813cc565893f/scratch', `purchase_js_step_${p.step}_lines_${p.start}_${p.end}.txt`);\n    fs.writeFileSync(outPath, p.content);\n    console.log(`  Saved snippet to: ${outPath}`);\n  });\n}\n\nrecover().catch(err => console.error(err));\n",
+      "Description": "Update recover-purchase-js.js script to use regex search.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\recover-purchase-js.js",
+      "toolAction": "Updating code recovery script",
+      "toolSummary": "Update scratch/recover-purchase-js.js"
+    }
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "step_index": 604,
+    "name": "write_to_file",
+    "args": {
+      "CodeContent": "const fs = require('fs');\nconst path = require('path');\n\nfunction searchDir(dir, query) {\n  const files = fs.readdirSync(dir);\n  for (const file of files) {\n    const filePath = path.join(dir, file);\n    const stat = fs.statSync(filePath);\n    if (stat.isDirectory()) {\n      searchDir(filePath, query);\n    } else if (file.endsWith('.js') || file.endsWith('.jsx')) {\n      const content = fs.readFileSync(filePath, 'utf8');\n      if (content.includes(query)) {\n        console.log(`Found \"${query}\" in: ${filePath}`);\n      }\n    }\n  }\n}\n\nconsole.log('Searching frontend...');\nsearchDir('c:\\\\Users\\\\admin\\\\Desktop\\\\billing_inventory\\\\frontend\\\\src', 'my-invoices/create');\nsearchDir('c:\\\\Users\\\\admin\\\\Desktop\\\\billing_inventory\\\\frontend\\\\src', 'my-invoices');\n",
+      "Description": "Search frontend files for my-invoices references",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\find_in_frontend.js",
+      "toolAction": "Creating find_in_frontend.js scratch script",
+      "toolSummary": "Create scratch script for frontend search"
+    }
+  }
+]

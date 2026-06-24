@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1041,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Test Gemini API connectivity and credentials",
+        "UserFacing": false
+      },
+      "CodeContent": "require('dotenv').config()\nconst { GoogleGenAI } = require('@google/genai')\n\nasync function testGemini() {\n  try {\n    console.log('API Key:', process.env.GEMINI_API_KEY ? 'FOUND (starts with ' + process.env.GEMINI_API_KEY.substring(0, 5) + '...)' : 'NOT FOUND')\n    if (!process.env.GEMINI_API_KEY) {\n      throw new Error('GEMINI_API_KEY env var is missing')\n    }\n    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })\n    console.log('Calling gemini-2.5-flash with test prompt...')\n    const response = await ai.models.generateContent({\n      model: 'gemini-2.5-flash',\n      contents: 'Hello, respond with a single word \"OK\" if you are working.'\n    })\n    console.log('Response status:', response.text ? 'SUCCESS' : 'EMPTY')\n    console.log('Response text:', response.text.trim())\n  } catch (err) {\n    console.error('❌ Gemini Error:', err)\n  }\n}\n\ntestGemini()\n",
+      "Description": "Create test-gemini.js script to test API connectivity",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\test-gemini.js",
+      "toolAction": "Creating Gemini test script",
+      "toolSummary": "Create test-gemini.js"
+    }
+  }
+]

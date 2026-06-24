@@ -17,6 +17,7 @@ const formatCurrency = (amount) => {
 
 function CSAMyPurchase() {
   const [purchases, setPurchases] = useState([])
+  const [filteredPurchases, setFilteredPurchases] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [selectedSupplier, setSelectedSupplier] = useState({ id: null, name: '' })
   const [dragActive, setDragActive] = useState(false)
@@ -24,8 +25,15 @@ function CSAMyPurchase() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
+  const [filters, setFilters] = useState({
+    fromDate: '',
+    toDate: '',
+    supplierName: ''
+  })
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [viewPurchase, setViewPurchase] = useState(null)
+  const [isEditingPurchase, setIsEditingPurchase] = useState(false)
+  const [editItems, setEditItems] = useState([])
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -38,16 +46,13 @@ function CSAMyPurchase() {
     currentStock: '0'
   })
 
-  useEffect(() => {
-    fetchPurchases()
-    fetchSuppliers()
-  }, [])
-
   const fetchPurchases = async () => {
     try {
       const res = await fetch(`${API_URL}/csa/my-purchases`, { headers: getAuthHeaders() })
       if (res.ok) {
-        setPurchases(await res.json())
+        const data = await res.json()
+        setPurchases(data)
+        setFilteredPurchases(data)
       }
     } catch (err) {
       console.error('Failed to fetch purchases:', err)
@@ -60,12 +65,49 @@ function CSAMyPurchase() {
       if (res.ok) {
         const data = await res.json()
         // Convert to array of objects with id and name if needed
-        const formattedSuppliers = data.map(s => typeof s === 'string' ? { id: null, name: s } : s)
+        const formattedSuppliers = data.map(s => typeof s === 'string' ? { id: s, name: s, isNameOnly: true } : s)
         setSuppliers(formattedSuppliers)
       }
     } catch (err) {
       console.error('Failed to fetch suppliers:', err)
     }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchPurchases()
+    fetchSuppliers()
+  }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [purchases, filters])
+
+  const applyFilters = () => {
+    let filtered = [...purchases]
+
+    if (filters.supplierName) {
+      filtered = filtered.filter(p => p.supplierName === filters.supplierName)
+    }
+    if (filters.fromDate) {
+      const fromDate = new Date(filters.fromDate)
+      fromDate.setHours(0, 0, 0, 0)
+      filtered = filtered.filter(p => new Date(p.createdAt) >= fromDate)
+    }
+    if (filters.toDate) {
+      const toDate = new Date(filters.toDate)
+      toDate.setHours(23, 59, 59, 999)
+      filtered = filtered.filter(p => new Date(p.createdAt) <= toDate)
+    }
+    setFilteredPurchases(filtered)
+  }
+
+  const resetFilters = () => {
+    setFilters({
+      fromDate: '',
+      toDate: '',
+      supplierName: ''
+    })
   }
 
   const handleView = async (purchase) => {
@@ -74,9 +116,73 @@ function CSAMyPurchase() {
       if (res.ok) {
         const data = await res.json()
         setViewPurchase(data)
+        setIsEditingPurchase(false)
       }
     } catch (err) {
       console.error('Failed to fetch purchase:', err)
+    }
+  }
+
+  const handleEditClick = () => {
+    setEditItems(viewPurchase.purchaseItems.map(item => ({
+      id: item.id,
+      productName: item.product?.name || '',
+      hsn: item.product?.hsn || '',
+      qty: parseInt(item.qty) || 0,
+      mrp: parseFloat(item.mrp || item.product?.baseSellingPrice) || 0,
+      rate: parseFloat(item.rate || item.costPrice) || 0,
+      discount: parseFloat(item.discount) || 0,
+      gstPercentage: parseFloat(item.gstPercentage) || 18,
+      total: parseFloat(item.total) || 0
+    })))
+    setIsEditingPurchase(true)
+  }
+
+  const handleItemChange = (idx, field, value) => {
+    const newItems = [...editItems]
+    newItems[idx][field] = value
+    
+    // Auto-calculate total if qty, rate, discount, or gst changes
+    if (['qty', 'rate', 'discount', 'gstPercentage'].includes(field)) {
+      const qty = parseFloat(newItems[idx].qty) || 0
+      const rate = parseFloat(newItems[idx].rate) || 0
+      const discount = parseFloat(newItems[idx].discount) || 0
+      const gst = parseFloat(newItems[idx].gstPercentage) || 0
+      
+      const taxable = qty * rate
+      const discountAmt = (taxable * discount) / 100
+      const taxableAfterDiscount = taxable - discountAmt
+      const taxAmt = (taxableAfterDiscount * gst) / 100
+      newItems[idx].total = taxableAfterDiscount + taxAmt
+    }
+    
+    setEditItems(newItems)
+  }
+
+  const handleSaveEdit = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${API_URL}/csa/my-purchases/${viewPurchase.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ items: editItems })
+      })
+      if (res.ok) {
+        setIsEditingPurchase(false)
+        fetchPurchases()
+        handleView({ id: viewPurchase.id })
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to update purchase')
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update purchase')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -143,7 +249,7 @@ function CSAMyPurchase() {
       if (selectedSupplier.name) {
         formData.append('supplierName', selectedSupplier.name)
       }
-      if (selectedSupplier.id) {
+      if (selectedSupplier.id && !selectedSupplier.isNameOnly) {
         formData.append('supplierId', selectedSupplier.id)
       }
       const res = await fetch(`${API_URL}/csa/my-purchases/upload`, {
@@ -324,6 +430,54 @@ function CSAMyPurchase() {
         </div>
       )}
 
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
+        <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Filter Purchases</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+            <input
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+            <input
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+            <select
+              value={filters.supplierName}
+              onChange={(e) => setFilters({ ...filters, supplierName: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Suppliers</option>
+              {suppliers.map((s, idx) => (
+                <option key={idx} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={resetFilters}
+              className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition"
+            >
+              Reset Filters
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Previous Purchases */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 md:px-6 py-4 border-b border-gray-200">
@@ -333,6 +487,7 @@ function CSAMyPurchase() {
           <table className="w-full min-w-[500px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sr. No</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Invoice #</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
@@ -341,15 +496,16 @@ function CSAMyPurchase() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {purchases.length === 0 ? (
+              {filteredPurchases.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-4 md:px-6 py-10 text-center text-gray-500">
+                  <td colSpan="6" className="px-4 md:px-6 py-10 text-center text-gray-500">
                     No purchases yet
                   </td>
                 </tr>
               ) : (
-                purchases.map((p) => (
+                filteredPurchases.map((p, index) => (
                   <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
                     <td className="px-4 md:px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-sm md:text-base">{p.invoiceNo}</td>
                     <td className="px-4 md:px-6 py-4 text-gray-600 text-sm md:text-base">{p.supplierName}</td>
                     <td className="px-4 md:px-6 py-4 text-gray-600 text-sm md:text-base">{new Date(p.createdAt).toLocaleDateString()}</td>
@@ -521,27 +677,55 @@ function CSAMyPurchase() {
 
       {/* View Purchase Modal */}
       {viewPurchase && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="print-content bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 print-modal-parent print:bg-transparent print:p-0">
+          <div className="print-content bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:max-w-none print:w-full print:max-h-none print:shadow-none print:rounded-none print:overflow-visible">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 print:hidden">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">Purchase Details</h2>
+                <h2 className="text-xl font-bold text-gray-800">
+                  {isEditingPurchase ? 'Edit Purchase Details' : 'Purchase Details'}
+                </h2>
                 <p className="text-gray-500 mt-1">Invoice #{viewPurchase.invoiceNo}</p>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={handlePrint}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
-                >
-                  <Download size={18} />
-                  Download PDF
-                </button>
-                <button
-                  onClick={() => setViewPurchase(null)}
-                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
-                >
-                  <X size={24} />
-                </button>
+                {isEditingPurchase ? (
+                  <>
+                    <button
+                      onClick={() => setIsEditingPurchase(false)}
+                      className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveEdit}
+                      disabled={loading}
+                      className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-lg font-medium transition"
+                    >
+                      {loading ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleEditClick}
+                      className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={handlePrint}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+                    >
+                      <Download size={18} />
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={() => setViewPurchase(null)}
+                      className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
+                    >
+                      <X size={24} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -564,31 +748,159 @@ function CSAMyPurchase() {
               </div>
 
               {/* Purchase Items */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Items</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
+              <div className="print:mt-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 print:text-base print:mb-2">Items</h3>
+                <div className="overflow-x-auto print:overflow-visible">
+                  <table className="w-full print:text-[10px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">SKU</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Cost Price</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-12 print:px-1 print:py-1 print:text-[9px]">No</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider print:px-1 print:py-1 print:text-[9px]">Items</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 print:px-1 print:py-1 print:text-[9px]">HSN No.</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-20 print:px-1 print:py-1 print:text-[9px]">Qty.</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-32 print:px-1 print:py-1 print:text-[9px]">MRP</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24 print:px-1 print:py-1 print:text-[9px]">Rate</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28 print:px-1 print:py-1 print:text-[9px]">Disc.</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28 print:px-1 print:py-1 print:text-[9px]">Tax</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28 print:px-1 print:py-1 print:text-[9px]">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {viewPurchase.purchaseItems?.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-800">{item.product?.name || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{item.product?.sku || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-right text-gray-700">{item.qty}</td>
-                          <td className="px-4 py-3 text-sm text-right text-gray-700">{formatCurrency(item.costPrice)}</td>
-                          <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                            {formatCurrency(item.qty * item.costPrice)}
-                          </td>
-                        </tr>
-                      ))}
+                      {isEditingPurchase ? (
+                        editItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50 border-b border-gray-100">
+                            <td className="px-3 py-3.5 text-sm text-gray-500 whitespace-nowrap">{idx + 1}</td>
+                            <td className="px-1 py-2">
+                              <input 
+                                type="text" 
+                                value={item.productName} 
+                                onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
+                                className="w-full p-1 border rounded text-xs"
+                              />
+                            </td>
+                            <td className="px-1 py-2">
+                              <input 
+                                type="text" 
+                                value={item.hsn} 
+                                onChange={(e) => handleItemChange(idx, 'hsn', e.target.value)}
+                                className="w-full p-1 border rounded text-xs"
+                              />
+                            </td>
+                            <td className="px-1 py-2">
+                              <input 
+                                type="number" 
+                                value={item.qty} 
+                                onChange={(e) => handleItemChange(idx, 'qty', e.target.value)}
+                                className="w-full p-1 border rounded text-xs text-right"
+                              />
+                            </td>
+                            <td className="px-1 py-2">
+                              <input 
+                                type="number" step="0.01"
+                                value={item.mrp} 
+                                onChange={(e) => handleItemChange(idx, 'mrp', e.target.value)}
+                                className="w-full p-1 border rounded text-xs text-right"
+                              />
+                            </td>
+                            <td className="px-1 py-2">
+                              <input 
+                                type="number" step="0.01"
+                                value={item.rate} 
+                                onChange={(e) => handleItemChange(idx, 'rate', e.target.value)}
+                                className="w-full p-1 border rounded text-xs text-right"
+                              />
+                            </td>
+                            <td className="px-1 py-2">
+                              <div className="flex items-center gap-1">
+                                <input 
+                                  type="number" step="0.01"
+                                  value={item.discount} 
+                                  onChange={(e) => handleItemChange(idx, 'discount', e.target.value)}
+                                  className="w-full p-1 border rounded text-xs text-right"
+                                />
+                                <span className="text-xs text-gray-500">%</span>
+                              </div>
+                            </td>
+                            <td className="px-1 py-2">
+                              <div className="flex items-center gap-1">
+                                <input 
+                                  type="number" step="0.01"
+                                  value={item.gstPercentage} 
+                                  onChange={(e) => handleItemChange(idx, 'gstPercentage', e.target.value)}
+                                  className="w-full p-1 border rounded text-xs text-right"
+                                />
+                                <span className="text-xs text-gray-500">%</span>
+                              </div>
+                            </td>
+                            <td className="px-1 py-2 text-right font-semibold text-gray-900 whitespace-nowrap text-sm">
+                              {formatCurrency(item.total)}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        viewPurchase.purchaseItems?.map((item, idx) => {
+                          const qty = parseFloat(item.qty) || 0
+                          const rate = parseFloat(item.rate || item.costPrice) || 0
+                          const mrp = parseFloat(item.mrp || item.product?.baseSellingPrice) || 0
+                          const discountPct = parseFloat(item.discount) || 0
+                          const gstPercentage = parseFloat(item.gstPercentage) || 18
+                        
+                        const taxable = qty * rate
+                        const discountAmt = (taxable * discountPct) / 100
+                        const taxableAfterDiscount = taxable - discountAmt
+                        const taxAmt = (taxableAfterDiscount * gstPercentage) / 100
+                        const finalTotal = item.total != null ? parseFloat(item.total) : (taxableAfterDiscount + taxAmt)
+
+                        // Calculate off percentage for MRP
+                        const getOffPercentageStr = () => {
+                          if (mrp > 0 && rate > 0 && mrp > rate) {
+                            const pct = ((mrp - rate) / mrp) * 100
+                            return `[${pct.toFixed(2)}% OFF]`
+                          }
+                          return null
+                        }
+                        const offPctStr = getOffPercentageStr()
+
+                        return (
+                          <tr key={idx} className="hover:bg-gray-50 border-b border-gray-100">
+                            <td className="px-3 py-3.5 text-sm text-gray-500 whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">{idx + 1}</td>
+                            <td className="px-3 py-3.5 text-sm font-medium text-gray-800 print:px-1 print:py-1.5 print:text-[10px]">{item.product?.name || '-'}</td>
+                            <td className="px-3 py-3.5 text-sm text-gray-600 whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">{item.product?.hsn || '-'}</td>
+                            <td className="px-3 py-3.5 text-sm text-right text-gray-700 whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">{qty} PCS</td>
+                            <td className="px-3 py-3.5 text-sm text-right whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">
+                              <div className="text-gray-800 font-medium">{mrp > 0 ? formatCurrency(mrp) : '-'}</div>
+                              {offPctStr && (
+                                <div className="text-[10px] text-green-600 font-semibold mt-0.5">{offPctStr}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-3.5 text-sm text-right text-gray-700 whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">{formatCurrency(rate)}</td>
+                            <td className="px-3 py-3.5 text-sm text-right whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">
+                              {discountAmt > 0 ? (
+                                <>
+                                  <div className="text-red-600 font-medium">{formatCurrency(discountAmt)}</div>
+                                  <div className="text-[10px] text-gray-500 mt-0.5">({discountPct}%)</div>
+                                </>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3.5 text-sm text-right whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">
+                              {taxAmt > 0 ? (
+                                <>
+                                  <div className="text-gray-700 font-medium">{formatCurrency(taxAmt)}</div>
+                                  <div className="text-[10px] text-gray-500 mt-0.5">({gstPercentage}%)</div>
+                                </>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3.5 text-sm text-right font-semibold text-gray-900 whitespace-nowrap print:px-1 print:py-1.5 print:text-[10px]">
+                              {formatCurrency(finalTotal)}
+                            </td>
+                          </tr>
+                        )
+                      })
+                      )}
                     </tbody>
                   </table>
                 </div>

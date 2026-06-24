@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { X, Eye } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -28,6 +29,7 @@ function CSAMyPaymentsIn() {
   const [error, setError] = useState('')
   const [savedPayment, setSavedPayment] = useState(null)
   const [showList, setShowList] = useState(false)
+  const [viewPayment, setViewPayment] = useState(null)
   const distributorDropdownRef = useRef(null)
 
   useEffect(() => {
@@ -190,6 +192,7 @@ function CSAMyPaymentsIn() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mode</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -217,6 +220,15 @@ function CSAMyPaymentsIn() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">{payment.referenceNo || '-'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">{formatCurrency(payment.amount)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => setViewPayment(payment)}
+                          className="text-gray-500 hover:text-pink-600 transition"
+                          title="View Details"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -336,6 +348,75 @@ function CSAMyPaymentsIn() {
               >
                 {loading ? 'Saving...' : 'Save Payment'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Payment Modal */}
+      {viewPayment && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h2 className="text-xl font-bold text-gray-800">Payment Details: {viewPayment.paymentNo}</h2>
+              <button
+                onClick={() => setViewPayment(null)}
+                className="p-2 text-gray-500 hover:bg-gray-200 rounded-full transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Payment No</div>
+                    <div className="font-medium text-gray-900">{viewPayment.paymentNo}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Date</div>
+                    <div className="font-medium text-gray-900">{new Date(viewPayment.createdAt).toLocaleDateString()}</div>
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Distributor</div>
+                  <div className="font-medium text-gray-900">{viewPayment.distributor?.companyName || '-'}</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Payment Mode</div>
+                    <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                      viewPayment.paymentMode === 'CASH' ? 'bg-green-100 text-green-800' :
+                      viewPayment.paymentMode === 'UPI' ? 'bg-blue-100 text-blue-800' :
+                      viewPayment.paymentMode === 'BANK_TRANSFER' ? 'bg-purple-100 text-purple-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {viewPayment.paymentMode}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Reference No</div>
+                    <div className="font-medium text-gray-900">{viewPayment.referenceNo || '-'}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Amount</div>
+                  <div className="text-2xl font-bold text-green-600">{formatCurrency(viewPayment.amount)}</div>
+                </div>
+
+                {viewPayment.notes && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Notes</div>
+                    <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-700 whitespace-pre-wrap border border-gray-200">
+                      {viewPayment.notes}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

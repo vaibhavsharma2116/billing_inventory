@@ -1,0 +1,18 @@
+[
+  {
+    "step_index": 851,
+    "name": "replace_file_content",
+    "args": {
+      "AllowMultiple": false,
+      "Description": "Update walkthrough.md to document enabling Gemini OCR for PDF uploads.",
+      "EndLine": 30,
+      "Instruction": "Add backend PDF OCR section to walkthrough.md.",
+      "ReplacementContent": "### 3. Distributor Purchase Component\n- **File modified**: [Purchase.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/Purchase.jsx)\n  - Added the `extractPan` helper function.\n  - Split the View Purchase Modal body into a clean, standard screen-only view and a high-fidelity print-only tax invoice view matching the gold-themed POPPIK LIFESTYLE Tax Invoice.\n  - Calculated all values (MRP discount %, margin discount, and GST tax amounts) dynamically from the purchase ledger items.\n\n### 4. Enable Gemini OCR for PDF Intake uploads\n- **File modified**: [purchase.js](file:///c:/Users/admin/Desktop/billing_inventory/backend/src/routes/purchase.js)\n  - Removed the hardcoded bypass of the Gemini OCR parser. Visual PDFs and image uploads will now be correctly sent to Gemini, allowing extraction of invoices even if they do not contain selectable text (such as scanned documents or image-only prints).\n\n---",
+      "StartLine": 23,
+      "TargetContent": "### 3. Distributor Purchase Component\n- **File modified**: [Purchase.jsx](file:///c:/Users/admin/Desktop/billing_inventory/frontend/src/components/Purchase.jsx)\n  - Added the `extractPan` helper function.\n  - Split the View Purchase Modal body into a clean, standard screen-only view and a high-fidelity print-only tax invoice view matching the gold-themed POPPIK LIFESTYLE Tax Invoice.\n  - Calculated all values (MRP discount %, margin discount, and GST tax amounts) dynamically from the purchase ledger items.\n\n---",
+      "TargetFile": "C:\\Users\\admin\\Desktop\\billing_inventory\\C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\walkthrough.md",
+      "toolAction": "Updating walkthrough list to cover PDF OCR fix",
+      "toolSummary": "Walkthrough update retry"
+    }
+  }
+]

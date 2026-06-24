@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1517,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "A scratch script to scan transcripts for run_command calls and print the command strings.",
+        "UserFacing": false
+      },
+      "CodeContent": "const fs = require('fs');\nconst readline = require('readline');\nconst path = require('path');\n\nconst brainDir = 'C:/Users/admin/.gemini/antigravity-ide/brain';\nconst conversations = [\n  'fe5f3da4-28e8-4953-b097-ce64bd94b483',\n  '53b57104-e4e2-40d0-adc5-813cc565893f'\n];\n\nasync function listCommands() {\n  for (const conv of conversations) {\n    const transcriptPath = path.join(brainDir, conv, '.system_generated', 'logs', 'transcript_full.jsonl');\n    if (!fs.existsSync(transcriptPath)) continue;\n\n    console.log(`\\n=================== Transcript: ${conv} ===================`);\n    const fileStream = fs.createReadStream(transcriptPath);\n    const rl = readline.createInterface({\n      input: fileStream,\n      crlfDelay: Infinity\n    });\n\n    for await (const line of rl) {\n      if (!line.trim()) continue;\n      const step = JSON.parse(line);\n\n      if (step.type === 'PLANNER_RESPONSE' && step.tool_calls) {\n        step.tool_calls.forEach(toolCall => {\n          const name = toolCall.name || toolCall.toolName;\n          const args = toolCall.args || toolCall.arguments;\n          if (name === 'run_command') {\n            console.log(`[Step ${step.step_index}] Cwd: ${args.Cwd} | Command: ${args.CommandLine}`);\n          }\n        });\n      }\n    }\n  }\n}\n\nlistCommands().catch(err => {\n  console.error(err);\n});\n",
+      "Description": "Create list-commands.js script to list all run commands.",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\list-commands.js",
+      "toolAction": "Creating command runner scanner",
+      "toolSummary": "Create scratch/list-commands.js"
+    }
+  }
+]

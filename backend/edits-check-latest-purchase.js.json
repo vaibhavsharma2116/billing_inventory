@@ -1,0 +1,19 @@
+[
+  {
+    "step_index": 1105,
+    "name": "write_to_file",
+    "args": {
+      "ArtifactMetadata": {
+        "RequestFeedback": false,
+        "Summary": "Check database entries for latest purchase ledger",
+        "UserFacing": false
+      },
+      "CodeContent": "const { PrismaClient } = require('@prisma/client')\nconst prisma = new PrismaClient()\n\nasync function main() {\n  const purchase = await prisma.purchaseLedger.findFirst({\n    orderBy: { createdAt: 'desc' },\n    include: {\n      purchaseItems: {\n        include: {\n          product: true\n        }\n      }\n    }\n  })\n  console.log('=== Latest Purchase Ledger ===')\n  console.log(JSON.stringify(purchase, null, 2))\n}\n\nmain()\n  .catch(console.error)\n  .finally(() => prisma.$disconnect())\n",
+      "Description": "Create check-latest-purchase.js script",
+      "Overwrite": true,
+      "TargetFile": "C:\\Users\\admin\\.gemini\\antigravity-ide\\brain\\53b57104-e4e2-40d0-adc5-813cc565893f\\scratch\\check-latest-purchase.js",
+      "toolAction": "Creating script to check latest purchase",
+      "toolSummary": "Create check-latest-purchase.js"
+    }
+  }
+]

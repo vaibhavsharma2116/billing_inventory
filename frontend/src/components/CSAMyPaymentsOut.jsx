@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Eye } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -27,6 +28,7 @@ function CSAMyPaymentsOut() {
   const [error, setError] = useState('')
   const [savedPayment, setSavedPayment] = useState(null)
   const [showList, setShowList] = useState(false)
+  const [viewPayment, setViewPayment] = useState(null)
   const supplierDropdownRef = useRef(null)
 
   useEffect(() => {
@@ -59,11 +61,11 @@ function CSAMyPaymentsOut() {
   }
 
   const filteredSuppliers = suppliers.filter(s => 
-    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
+    s?.name?.toLowerCase().includes(supplierName.toLowerCase())
   )
 
   const selectSupplier = (supplier) => {
-    setSupplierName(supplier)
+    setSupplierName(supplier.name)
     setShowSupplierDropdown(false)
   }
 
@@ -174,12 +176,14 @@ function CSAMyPaymentsOut() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">No.</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mode</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -190,8 +194,9 @@ function CSAMyPaymentsOut() {
                     </td>
                   </tr>
                 ) : (
-                  paymentsOut.map(payment => (
+                  paymentsOut.map((payment, index) => (
                     <tr key={payment.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-800">{index + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{payment.paymentNo}</td>
                       <td className="px-4 py-3 text-gray-600">{payment.supplierName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(payment.createdAt).toLocaleDateString()}</td>
@@ -207,6 +212,11 @@ function CSAMyPaymentsOut() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">{payment.referenceNo || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-green-600">{formatCurrency(payment.amount)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => setViewPayment(payment)} className="text-blue-600 hover:text-blue-800" title="View Payment">
+                          <Eye className="w-5 h-5" />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -234,11 +244,11 @@ function CSAMyPaymentsOut() {
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                   {filteredSuppliers.map((supplier, index) => (
                     <div
-                      key={index}
+                      key={supplier.id || index}
                       onClick={() => selectSupplier(supplier)}
                       className="px-4 py-3 hover:bg-green-50 cursor-pointer"
                     >
-                      <div className="font-medium text-gray-800">{supplier}</div>
+                      <div className="font-medium text-gray-800">{supplier.name}</div>
                     </div>
                   ))}
                 </div>
@@ -305,6 +315,65 @@ function CSAMyPaymentsOut() {
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 md:px-8 py-3 rounded-xl font-medium transition"
               >
                 {loading ? 'Saving...' : 'Save Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Payment Modal */}
+      {viewPayment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h2 className="text-xl font-bold text-gray-800">Payment Details - {viewPayment.paymentNo}</h2>
+              <button onClick={() => setViewPayment(null)} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Supplier</p>
+                  <p className="font-medium text-gray-900 text-lg">{viewPayment.supplierName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Date</p>
+                  <p className="font-medium text-gray-900 text-lg">{new Date(viewPayment.createdAt).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Payment Mode</p>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    viewPayment.paymentMode === 'CASH' ? 'bg-green-100 text-green-800' :
+                    viewPayment.paymentMode === 'UPI' ? 'bg-blue-100 text-blue-800' :
+                    viewPayment.paymentMode === 'BANK_TRANSFER' ? 'bg-purple-100 text-purple-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {viewPayment.paymentMode}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Amount</p>
+                  <p className="font-bold text-green-600 text-2xl">{formatCurrency(viewPayment.amount)}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Reference No.</p>
+                  <p className="font-medium text-gray-900">{viewPayment.referenceNo || '-'}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Notes</p>
+                  <p className="font-medium text-gray-900 p-4 bg-gray-50 rounded-lg whitespace-pre-wrap min-h-[60px]">{viewPayment.notes || '-'}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button 
+                onClick={() => setViewPayment(null)}
+                className="bg-gray-800 hover:bg-gray-900 text-white px-6 py-2 rounded-lg font-medium transition"
+              >
+                Close
               </button>
             </div>
           </div>
