@@ -78,8 +78,8 @@ router.get('/:id', authenticateToken, requireDistributor, async (req, res) => {
 
 router.post('/', authenticateToken, requireDistributor, async (req, res) => {
   try {
-    const { name, gstin, address, creditLimit, phone } = req.body
-    console.log('Creating party - received:', { name, gstin, address, creditLimit, phone })
+    const { name, gstin, address, creditLimit, phone, margin } = req.body
+    console.log('Creating party - received:', { name, gstin, address, creditLimit, phone, margin })
     
     if (!name) {
       return res.status(400).json({ error: 'Name is required' })
@@ -92,6 +92,7 @@ router.post('/', authenticateToken, requireDistributor, async (req, res) => {
         address: address || null,
         creditLimit: creditLimit ? parseFloat(creditLimit) : null,
         phone: phone !== undefined && phone !== null && phone !== '' ? String(phone) : null,
+        margin: margin ? parseFloat(margin) : null,
         distributorId: req.user.distributorId
       }
     })
@@ -107,8 +108,8 @@ router.post('/', authenticateToken, requireDistributor, async (req, res) => {
 router.put('/:id', authenticateToken, requireDistributor, async (req, res) => {
   try {
     const { id } = req.params
-    const { name, gstin, address, creditLimit, phone } = req.body
-    console.log('Updating party - id:', id, 'received:', { name, gstin, address, creditLimit, phone })
+    const { name, gstin, address, creditLimit, phone, margin } = req.body
+    console.log('Updating party - id:', id, 'received:', { name, gstin, address, creditLimit, phone, margin })
 
     const existingParty = await prisma.party.findUnique({ where: { id } })
     if (!existingParty) {
@@ -125,7 +126,8 @@ router.put('/:id', authenticateToken, requireDistributor, async (req, res) => {
         gstin: gstin || null,
         address: address || null,
         creditLimit: creditLimit ? parseFloat(creditLimit) : null,
-        phone: phone !== undefined && phone !== null && phone !== '' ? String(phone) : null
+        phone: phone !== undefined && phone !== null && phone !== '' ? String(phone) : null,
+        margin: margin ? parseFloat(margin) : null
       }
     })
     console.log('Updated party:', party)

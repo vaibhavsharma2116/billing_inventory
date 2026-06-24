@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Eye, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 const PURCHASE_API_URL = `${API_URL}/purchase`
@@ -21,6 +22,7 @@ function PaymentsOut() {
   const [error, setError] = useState('')
   const [savedPayment, setSavedPayment] = useState(null)
   const [showList, setShowList] = useState(true)
+  const [viewPayment, setViewPayment] = useState(null)
   
   const supplierDropdownRef = useRef(null)
 
@@ -53,7 +55,13 @@ function PaymentsOut() {
   const fetchSuppliers = async () => {
     try {
       const res = await fetch(`${PURCHASE_API_URL}/suppliers`, { headers: getAuthHeaders() })
-      setSuppliers(await res.json())
+      const data = await res.json()
+      setSuppliers(data)
+
+      if (data.length > 0) {
+        const firstSupplier = data[0]
+        setSupplierName(typeof firstSupplier === 'string' ? firstSupplier : firstSupplier.name)
+      }
     } catch (err) {
       console.error('Failed to fetch suppliers')
     }
@@ -163,24 +171,27 @@ function PaymentsOut() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mode</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {paymentsOut.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={8} className="px-6 py-10 text-center text-gray-500">
                       No payments sent yet
                     </td>
                   </tr>
                 ) : (
-                  paymentsOut.map(payment => (
+                  paymentsOut.map((payment, index) => (
                     <tr key={payment.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-500">{index + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{payment.paymentNo}</td>
                       <td className="px-4 py-3 text-gray-600">{payment.supplierName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(payment.createdAt).toLocaleDateString()}</td>
@@ -196,6 +207,15 @@ function PaymentsOut() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">{payment.referenceNo || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-green-600">₹{(parseFloat(payment.amount) || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => setViewPayment(payment)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="View Payment"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -294,6 +314,62 @@ function PaymentsOut() {
               >
                 {loading ? 'Saving...' : 'Save Payment'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Payment Modal */}
+      {viewPayment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl mx-4 overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Payment Details: {viewPayment.paymentNo}</h2>
+              <button
+                onClick={() => setViewPayment(null)}
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Supplier Info</h3>
+                  <p className="font-medium text-gray-800">{viewPayment.supplierName}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Payment Info</h3>
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">Date:</span> {new Date(viewPayment.createdAt).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-700 mt-1 flex items-center gap-2">
+                    <span className="font-medium">Mode:</span> 
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      viewPayment.paymentMode === 'CASH' ? 'bg-green-100 text-green-800' :
+                      viewPayment.paymentMode === 'UPI' ? 'bg-blue-100 text-blue-800' :
+                      viewPayment.paymentMode === 'BANK_TRANSFER' ? 'bg-purple-100 text-purple-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {viewPayment.paymentMode}
+                    </span>
+                  </p>
+                  {viewPayment.referenceNo && (
+                    <p className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium">Reference:</span> {viewPayment.referenceNo}
+                    </p>
+                  )}
+                  {viewPayment.notes && (
+                    <p className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium">Notes:</span> {viewPayment.notes}
+                    </p>
+                  )}
+                  <p className="text-sm font-bold text-gray-900 mt-2 border-t border-gray-300 pt-2">
+                    Amount: ₹{parseFloat(viewPayment.amount).toFixed(2)}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -290,11 +290,11 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
           data: {
             purchaseId: purchaseLedger.id,
             productId: product.id,
-            sortOrder: i,
             qty: parseInt(item.qty, 10) || 0,
-            costPrice: parseFloat(item.rate) || null,
+            mrp: cleanedValues.mrp || parseFloat(item.mrp) || null,
+            costPrice: parseFloat(item.rate) || 0,
             rate: cleanedValues.rate || parseFloat(item.rate) || 0,
-            discount: cleanedValues.discount || null,
+            discount: cleanedValues.discount || parseFloat(item.discount) || null,
             gstPercentage,
             total: itemTotal,
             batchNo: item.batchNo || null,
@@ -638,22 +638,70 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
           }
 
           // 2. PRODUCT DETECTOR (Flexible multi-line reconstruction)
-          if (/poppik/i.test(line)) {
+          const isPoppikLine = /poppik/i.test(line);
+          const isCsaLine = /\b\d{8}\b/.test(line) && /\d+%/.test(line);
+
+          if (isPoppikLine || isCsaLine) {
             let fullRowText = line;
 
             // Look-ahead buffer to stitch columns together safely
             let forwardIndex = i + 1;
             while (
               forwardIndex < lines.length &&
-              !/poppik/i.test(lines[forwardIndex]) &&
+              !(/poppik/i.test(lines[forwardIndex]) || (/\b\d{8}\b/.test(lines[forwardIndex]) && /\d+%/.test(lines[forwardIndex]))) &&
               !/SUBTOTAL/i.test(lines[forwardIndex]) &&
               !/Taxable Amount/i.test(lines[forwardIndex]) &&
-              !/CGST|SGST/i.test(lines[forwardIndex])
+              !/CGST|SGST/i.test(lines[forwardIndex]) &&
+              !/Grand Total/i.test(lines[forwardIndex])
             ) {
               fullRowText += " " + lines[forwardIndex];
               forwardIndex++;
             }
             i = forwardIndex - 1; // Update iterator pointer safely
+
+            if (isCsaLine) {
+               console.log("Processing CSA line:", fullRowText);
+               let csaLine = fullRowText.replace(/^\d+\s+/, '');
+               let matched = false;
+
+               // Try matching NEW format first: Product, HSN, MRP, Qty, Rate, Margin %, Taxable, GST %, Total
+               // Example: Poppik Nailpaint- 24 33041000 129.00 3 64.50 0.03% 163.93 18% 193.44
+               const matchNew = csaLine.match(/(.*?)\s+(\d{8})\s+([\d.]+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)%?\s+([\d.]+)\s+(\d+)%?\s+([\d.]+)/);
+               if (matchNew) {
+                 parsedProducts.push({
+                   productName: matchNew[1].trim(),
+                   hsn: String(matchNew[2]),
+                   mrp: parseFloat(matchNew[3]) || 0,
+                   qty: parseInt(matchNew[4], 10) || 0,
+                   rate: parseFloat(matchNew[5]) || 0,
+                   discount: parseFloat(matchNew[6]) || 0,
+                   tax: `${matchNew[8]}%`,
+                   total: parseFloat(matchNew[9]) || 0
+                 });
+                 console.log("✅ Added CSA parsed product (NEW format):", matchNew[1].trim());
+                 matched = true;
+               } else {
+                 // Try matching OLD format: Product, HSN, Qty, MRP, Rate, Disc, Tax (18%), Total
+                 // Example: Poppik Nailpaint- 24 33041000 3 129.00 64.50 0.03 15.52 (18%) 193.44
+                 const matchOld = csaLine.match(/(.*?)\s+(\d{8})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\(\d+%\)\s+([\d.]+)/);
+                 if (matchOld) {
+                   const taxPctMatch = fullRowText.match(/\((\d+)%\)/);
+                   parsedProducts.push({
+                     productName: matchOld[1].trim(),
+                     hsn: String(matchOld[2]),
+                     qty: parseInt(matchOld[3], 10) || 0,
+                     mrp: parseFloat(matchOld[4]) || 0,
+                     rate: parseFloat(matchOld[5]) || 0,
+                     discount: parseFloat(matchOld[6]) || 0,
+                     tax: taxPctMatch ? `${taxPctMatch[1]}%` : "18%",
+                     total: parseFloat(matchOld[8]) || 0
+                   });
+                   console.log("✅ Added CSA parsed product (OLD format):", matchOld[1].trim());
+                   matched = true;
+                 }
+               }
+               if (matched) continue;
+            }
 
             // 3. CLEAN COMPONENT EXTRACTIONS
             // FIRST: Fix the fullRowText to split product variants from HSN!
@@ -953,7 +1001,7 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
     const calculatedTotal = items.reduce((sum, item) => sum + (parseFloat(item.total) || (parseFloat(item.costPrice) * parseInt(item.quantity))), 0);
     const purchaseInvoiceNo = invoiceMetadata.invoiceNo || req.body.invoiceNo || `PUR-${Date.now()}`;
     const purchaseDate = invoiceMetadata.invoiceDate || req.body.invoiceDate || new Date();
-    const finalTotal = req.body.totalAmount ? parseFloat(req.body.totalAmount) : (invoiceMetadata.totalAmount || calculatedTotal);
+    const finalTotal = req.body.totalAmount ? parseFloat(req.body.totalAmount) : (calculatedTotal || invoiceMetadata.totalAmount);
 
     // Verify supplier exists if supplierId is provided
     if (supplierId) {
@@ -1091,12 +1139,11 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
         data: {
           purchaseId: purchaseLedger.id,
           productId: product.id,
-          sortOrder: index,
           qty: cleanQty,
           mrp: parseFloat(item.mrp) || null,
-          costPrice: parseFloat(item.costPrice) || null,
-          rate: cleanedValues.rate || parseFloat(item.costPrice) || 0,
-          discount: cleanedValues.discount || null,
+          costPrice: parseFloat(item.costPrice) || parseFloat(item.rate) || 0,
+          rate: parseFloat(item.rate) || parseFloat(item.costPrice) || 0,
+          discount: parseFloat(item.discount) || null,
           gstPercentage,
           total: itemTotal,
           batchNo: item.batchNo || null,
@@ -1132,12 +1179,31 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
 
 router.get('/', authenticateToken, requireDistributor, async (req, res) => {
   try {
+    const { fromDate, toDate, supplierName } = req.query;
+    let whereClause = { distributorId: req.user.distributorId };
+    
+    if (fromDate || toDate) {
+      whereClause.createdAt = {};
+      if (fromDate) {
+        whereClause.createdAt.gte = new Date(fromDate);
+      }
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        whereClause.createdAt.lte = to;
+      }
+    }
+    
+    if (supplierName) {
+      whereClause.supplierName = supplierName;
+    }
+
     const purchases = await prisma.purchaseLedger.findMany({
-      where: { distributorId: req.user.distributorId },
+      where: whereClause,
       include: { 
         purchaseItems: {
           include: { product: true },
-          orderBy: { sortOrder: 'asc' }
+          orderBy: { id: 'asc' }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -1226,7 +1292,7 @@ router.get('/:id', authenticateToken, requireDistributor, async (req, res) => {
         distributor: true,
         purchaseItems: {
           include: { product: true },
-          orderBy: { sortOrder: 'asc' }
+          orderBy: { id: 'asc' }
         }
       }
     })

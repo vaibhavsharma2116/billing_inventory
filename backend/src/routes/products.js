@@ -177,6 +177,18 @@ router.put('/:id', authenticateToken, requireDistributor, async (req, res) => {
   }
 })
 
+router.delete('/all', authenticateToken, requireDistributor, async (req, res) => {
+  try {
+    await prisma.product.deleteMany({
+      where: { distributorId: req.user.distributorId }
+    })
+    res.status(204).send()
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Failed to delete all products' })
+  }
+})
+
 router.delete('/:id', authenticateToken, requireDistributor, async (req, res) => {
   try {
     const { id } = req.params

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, X, Eye, Download } from 'lucide-react'
+import { Plus, X, Eye, Download, Trash2, Edit2 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 const PURCHASE_API_URL = `${API_URL}/purchase`
@@ -30,6 +30,8 @@ function Purchase() {
   // Product modal states
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [viewPurchase, setViewPurchase] = useState(null)
+  const [editPurchase, setEditPurchase] = useState(null)
+  const [editItems, setEditItems] = useState([])
 
   const formatCurrency = (amount) => {
     return `₹${(parseFloat(amount) || 0).toLocaleString('en-IN', {
@@ -49,6 +51,87 @@ function Purchase() {
       console.error('Failed to fetch purchase details:', err)
     }
   }
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this purchase? This will revert the stock changes.')) {
+      return
+    }
+    try {
+      const res = await fetch(`${PURCHASE_API_URL}/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      if (res.ok) {
+        fetchPurchases()
+      } else {
+        const data = await res.json()
+        setError(data.error || 'Failed to delete purchase')
+      }
+    } catch (err) {
+      console.error('Failed to delete purchase:', err)
+      setError('Failed to delete purchase')
+    }
+  }
+
+  const handleEdit = async (purchase) => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${PURCHASE_API_URL}/${purchase.id}`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        const data = await res.json()
+        setEditPurchase(data)
+        setEditItems(data.purchaseItems.map(item => ({
+          id: item.id,
+          productName: item.product?.name || '',
+          sku: item.product?.sku || '',
+          hsn: item.product?.hsn || '',
+          batchNo: item.batchNo || '',
+          expiryDate: item.expiryDate ? item.expiryDate.split('T')[0] : '',
+          qty: item.qty || 0,
+          costPrice: item.costPrice || item.rate || 0,
+          rate: item.rate || item.costPrice || 0,
+          mrp: item.mrp || item.product?.baseSellingPrice || 0,
+          gstPercentage: item.gstPercentage || 18,
+          total: item.total || 0,
+          discount: item.discount || 0
+        })))
+      }
+    } catch (err) {
+      console.error('Failed to fetch purchase details for editing:', err)
+      setError('Failed to load purchase for editing')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${PURCHASE_API_URL}/${editPurchase.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ items: editItems })
+      })
+
+      if (res.ok) {
+        setEditPurchase(null)
+        setEditItems([])
+        fetchPurchases()
+      } else {
+        const data = await res.json()
+        setError(data.error || 'Failed to update purchase')
+      }
+    } catch (err) {
+      console.error('Failed to update purchase:', err)
+      setError('Failed to update purchase')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -64,7 +147,6 @@ function Purchase() {
   const supplierDropdownRef = useRef(null)
 
   useEffect(() => {
-    fetchPurchases()
     fetchSuppliers()
   }, [])
   
@@ -148,6 +230,13 @@ function Purchase() {
       formData.append('file', file)
       if (supplierName) {
         formData.append('supplierName', supplierName)
+        const selectedSupplier = suppliers.find(s => {
+          const name = typeof s === 'string' ? s : s.name
+          return name === supplierName
+        })
+        if (selectedSupplier && selectedSupplier.id) {
+          formData.append('supplierId', selectedSupplier.id)
+        }
       }
       const response = await fetch(`${PURCHASE_API_URL}/upload`, {
         method: 'POST',
@@ -169,15 +258,39 @@ function Purchase() {
     }
   }
 
+  const [filters, setFilters] = useState({
+    fromDate: '',
+    toDate: '',
+    supplierName: ''
+  })
+
   const fetchPurchases = async () => {
     try {
-      const res = await fetch(PURCHASE_API_URL, { headers: getAuthHeaders() })
+      const params = new URLSearchParams()
+      if (filters.fromDate) params.append('fromDate', filters.fromDate)
+      if (filters.toDate) params.append('toDate', filters.toDate)
+      if (filters.supplierName) params.append('supplierName', filters.supplierName)
+      
+      const res = await fetch(`${PURCHASE_API_URL}${params.toString() ? `?${params.toString()}` : ''}`, { headers: getAuthHeaders() })
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch')
       setPurchases(data)
     } catch (err) {
       console.error('Failed to fetch purchases')
     }
   }
+
+  const resetFilters = () => {
+    setFilters({
+      fromDate: '',
+      toDate: '',
+      supplierName: ''
+    })
+  }
+
+  useEffect(() => {
+    fetchPurchases()
+  }, [filters])
 
   const openAddModal = () => {
     setFormData({
@@ -357,6 +470,38 @@ function Purchase() {
         </div>
       )}
 
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-6 mb-6">
+        <div className="flex flex-col md:flex-row gap-4 items-end">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
+            <input
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">To Date</label>
+            <input
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <button
+              onClick={resetFilters}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition h-[42px]"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Previous Purchases */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-4 md:px-6 py-4 border-b border-gray-200">
@@ -366,6 +511,7 @@ function Purchase() {
           <table className="w-full min-w-[500px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Sr. No.</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Invoice #</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                 <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
@@ -376,13 +522,14 @@ function Purchase() {
             <tbody className="divide-y divide-gray-200">
               {purchases.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-4 md:px-6 py-10 text-center text-gray-500">
+                  <td colSpan="6" className="px-4 md:px-6 py-10 text-center text-gray-500">
                     No purchases yet
                   </td>
                 </tr>
               ) : (
-                purchases.map((p) => (
+                purchases.map((p, index) => (
                   <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
                     <td className="px-4 md:px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-sm md:text-base">{p.invoiceNo}</td>
                     <td className="px-4 md:px-6 py-4 text-gray-600 text-sm md:text-base">{p.supplierName}</td>
                     <td className="px-4 md:px-6 py-4 text-gray-600 text-sm md:text-base">{new Date(p.createdAt).toLocaleDateString()}</td>
@@ -392,10 +539,24 @@ function Purchase() {
                     <td className="px-4 md:px-6 py-4 text-right whitespace-nowrap">
                       <button
                         onClick={() => handleView(p)}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition inline-flex items-center"
+                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition inline-flex items-center mr-2"
                         title="View Purchase"
                       >
                         <Eye size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleEdit(p)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition inline-flex items-center mr-2"
+                        title="Edit Purchase"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(p.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition inline-flex items-center"
+                        title="Delete Purchase"
+                      >
+                        <Trash2 size={18} />
                       </button>
                     </td>
                   </tr>
@@ -695,9 +856,8 @@ function Purchase() {
                   totalTaxable += totalExcludingGst
                   grandTotal += total
 
-                  const isInterState = viewPurchase.distributor?.gstIn 
-                    ? !viewPurchase.distributor.gstIn.startsWith('27') 
-                    : false
+                  const gstIn = viewPurchase.supplier?.gstIn || viewPurchase.distributor?.gstIn || ''
+                  const isInterState = gstIn ? !String(gstIn).startsWith('27') : false
 
                   if (isInterState) {
                     totalIGST += taxAmt
@@ -896,6 +1056,188 @@ function Purchase() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Purchase Modal */}
+      {editPurchase && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={loading}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-lg font-medium transition"
+                >
+                  {loading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+              
+              <div className="bg-gray-50 px-6 py-2 rounded-full border border-gray-200">
+                <span className="font-semibold text-gray-800">
+                  Total: {formatCurrency(editItems.reduce((sum, item) => sum + (parseFloat(item.total) || (parseFloat(item.rate) * parseInt(item.qty)) || 0), 0))}
+                </span>
+              </div>
+              
+              <button
+                onClick={() => { setEditPurchase(null); setEditItems([]) }}
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Items</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[10px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-12">No</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Items</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">HSN No.</th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-20">Qty.</th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">MRP</th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Rate</th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28">Disc.</th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28">Tax</th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28">Total</th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {editItems.map((item, index) => (
+                      <tr key={index} className="hover:bg-gray-50 border-b border-gray-100">
+                        <td className="px-3 py-3.5 text-sm text-gray-500 whitespace-nowrap">{index + 1}</td>
+                        <td className="px-1 py-2">
+                          <input 
+                            type="text" 
+                            value={item.productName} 
+                            onChange={(e) => {
+                              const newItems = [...editItems]
+                              newItems[index].productName = e.target.value
+                              setEditItems(newItems)
+                            }}
+                            className="w-full p-1 border rounded text-xs"
+                          />
+                        </td>
+                        <td className="px-1 py-2">
+                          <input 
+                            type="text" 
+                            value={item.hsn} 
+                            onChange={(e) => {
+                              const newItems = [...editItems]
+                              newItems[index].hsn = e.target.value
+                              setEditItems(newItems)
+                            }}
+                            className="w-full p-1 border rounded text-xs"
+                          />
+                        </td>
+                        <td className="px-1 py-2">
+                          <input 
+                            type="number" 
+                            value={item.qty} 
+                            onChange={(e) => {
+                              const newItems = [...editItems]
+                              newItems[index].qty = parseInt(e.target.value) || 0
+                              newItems[index].total = newItems[index].qty * newItems[index].rate
+                              setEditItems(newItems)
+                            }}
+                            className="w-full p-1 border rounded text-xs text-right"
+                          />
+                        </td>
+                        <td className="px-1 py-2">
+                          <input 
+                            type="number" step="0.01"
+                            value={item.mrp} 
+                            onChange={(e) => {
+                              const newItems = [...editItems]
+                              newItems[index].mrp = parseFloat(e.target.value) || 0
+                              setEditItems(newItems)
+                            }}
+                            className="w-full p-1 border rounded text-xs text-right"
+                          />
+                        </td>
+                        <td className="px-1 py-2">
+                          <input 
+                            type="number" step="0.01"
+                            value={item.rate} 
+                            onChange={(e) => {
+                              const newItems = [...editItems]
+                              newItems[index].rate = parseFloat(e.target.value) || 0
+                              newItems[index].costPrice = newItems[index].rate
+                              newItems[index].total = newItems[index].qty * newItems[index].rate
+                              setEditItems(newItems)
+                            }}
+                            className="w-full p-1 border rounded text-xs text-right"
+                          />
+                        </td>
+                        <td className="px-1 py-2">
+                          <div className="flex items-center gap-1">
+                            <input 
+                              type="number" step="0.01"
+                              value={item.discount} 
+                              onChange={(e) => {
+                                const newItems = [...editItems]
+                                newItems[index].discount = parseFloat(e.target.value) || 0
+                                setEditItems(newItems)
+                              }}
+                              className="w-full p-1 border rounded text-xs text-right"
+                            />
+                            <span className="text-xs text-gray-500">%</span>
+                          </div>
+                        </td>
+                        <td className="px-1 py-2">
+                          <div className="flex items-center gap-1">
+                            <input 
+                              type="number" step="0.01"
+                              value={item.gstPercentage} 
+                              onChange={(e) => {
+                                const newItems = [...editItems]
+                                newItems[index].gstPercentage = parseFloat(e.target.value) || 0
+                                setEditItems(newItems)
+                              }}
+                              className="w-full p-1 border rounded text-xs text-right"
+                            />
+                            <span className="text-xs text-gray-500">%</span>
+                          </div>
+                        </td>
+                        <td className="px-1 py-2 text-right font-semibold text-gray-900 whitespace-nowrap text-sm">
+                          {formatCurrency(item.total)}
+                        </td>
+                        <td className="px-1 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newItems = editItems.filter((_, i) => i !== index)
+                              setEditItems(newItems)
+                            }}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditItems([
+                    ...editItems, 
+                    {
+                      productName: '', sku: '', hsn: '', qty: 1, rate: 0, costPrice: 0, mrp: 0, gstPercentage: 18, total: 0, discount: 0
+                    }
+                  ])}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+                >
+                  <Plus size={16} /> Add Item Row
+                </button>
+              </div>
             </div>
           </div>
         </div>

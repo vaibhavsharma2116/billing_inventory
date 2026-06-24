@@ -122,21 +122,25 @@ router.post('/create', authenticateToken, requireDistributor, async (req, res) =
         })
       }
 
-      const invoiceItemsData = productsData.map(({ product, qty, rate, gstPercentage, extraMarginPercentage }) => ({
-        productId: product.id,
-        qty,
-        costPrice: product.costPrice,
-        rate,
-        gstPercentage,
-        extraMarginPercentage: extraMarginPercentage || 0,
-        total: (qty * rate) + ((qty * rate * gstPercentage) / 100),
-        distributorId
-      }))
+      const invoiceItemsData = productsData.map(({ product, qty, rate, gstPercentage, extraMarginPercentage }) => {
+        const total = qty * rate;
+        return {
+          productId: product.id,
+          qty,
+          costPrice: product.costPrice,
+          rate,
+          gstPercentage,
+          extraMarginPercentage: extraMarginPercentage || 0,
+          total,
+          distributorId
+        }
+      })
 
       for (const item of items) {
-        const taxable = item.qty * item.rate
+        const total = item.qty * item.rate
+        const taxable = total / (1 + (item.gstPercentage / 100))
         totalTaxable += taxable
-        const gstAmount = (taxable * item.gstPercentage) / 100
+        const gstAmount = total - taxable
         if (isInterState) {
           totalIGST += gstAmount
         } else {

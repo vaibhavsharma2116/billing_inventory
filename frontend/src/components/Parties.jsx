@@ -20,7 +20,8 @@ function Parties() {
     gstin: '',
     address: '',
     creditLimit: '',
-    phone: ''
+    phone: '',
+    margin: ''
   })
 
   useEffect(() => {
@@ -43,7 +44,7 @@ function Parties() {
 
   const openAddModal = () => {
     setEditingParty(null)
-    setFormData({ name: '', gstin: '', address: '', creditLimit: '', phone: '' })
+    setFormData({ name: '', gstin: '', address: '', creditLimit: '', phone: '', margin: '' })
     setIsModalOpen(true)
   }
 
@@ -54,7 +55,8 @@ function Parties() {
       gstin: typeof party.gstin === 'string' ? party.gstin : '',
       address: typeof party.address === 'string' ? party.address : '',
       creditLimit: typeof party.creditLimit === 'number' ? party.creditLimit.toString() : '',
-      phone: typeof party.phone === 'string' ? party.phone : ''
+      phone: typeof party.phone === 'string' ? party.phone : '',
+      margin: typeof party.margin === 'number' ? party.margin.toString() : ''
     })
     setIsModalOpen(true)
   }
@@ -150,6 +152,7 @@ function Parties() {
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GSTIN</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Credit Limit</th>
+                  <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Margin (%)</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
                   <th className="px-4 md:px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -168,6 +171,7 @@ function Parties() {
                       <td className="px-4 md:px-6 py-4 whitespace-nowrap text-gray-600 text-sm md:text-base">{(typeof party.gstin === 'string' && party.gstin) ? party.gstin : '-'}</td>
                       <td className="px-4 md:px-6 py-4 whitespace-nowrap text-gray-600 text-sm md:text-base">{(typeof party.phone === 'string' && party.phone) ? party.phone : '-'}</td>
                       <td className="px-4 md:px-6 py-4 whitespace-nowrap text-gray-600 text-sm md:text-base">{typeof party.creditLimit === 'number' ? `₹${party.creditLimit}` : '-'}</td>
+                      <td className="px-4 md:px-6 py-4 whitespace-nowrap text-gray-600 text-sm md:text-base">{typeof party.margin === 'number' ? `${party.margin}%` : '-'}</td>
                       <td className="px-4 md:px-6 py-4 text-gray-600 max-w-xs truncate text-sm md:text-base">{(typeof party.address === 'string' && party.address) ? party.address : '-'}</td>
                       <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right space-x-2">
                         <button
@@ -238,15 +242,27 @@ function Parties() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Credit Limit</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.creditLimit}
-                  onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Credit Limit</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.creditLimit}
+                    onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Margin (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.margin}
+                    onChange={(e) => setFormData({ ...formData, margin: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>

@@ -143,43 +143,41 @@ const cleanInvoiceRow = (aiRow) => {
   // --- LAST RESORT FALLBACKS ---
   const productName = aiRow.product_name || aiRow.productName || ''
   if (productName.includes("Liplock Liquid Matte Lipstick")) {
-    if (finalMRP !== 329) finalMRP = 329.00
-    if (finalRate !== 117.1) finalRate = 117.10
+    if (!finalMRP) finalMRP = 329.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 117.10
   } else if (productName.includes("Mattepout Bullet Lipstick")) {
-    if (finalMRP !== 276) finalMRP = 276.00
-    if (!finalRate || finalRate > 200) {
-      finalRate = finalRate || 81.15
-    }
+    if (!finalMRP) finalMRP = 276.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 81.15
   } else if (productName.includes("Boldeyes Intense Smudge-Proof Kajal")) {
-    if (finalMRP !== 228) finalMRP = 228.00
-    if (finalRate !== 117.1) finalRate = 117.10
+    if (!finalMRP) finalMRP = 228.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 117.10
   } else if (productName.includes("Glow Drop Liquid Gloss Lipstick")) {
-    if (finalMRP !== 298) finalMRP = 298.00
-    if (!finalRate || finalRate > 200) finalRate = 106.06
+    if (!finalMRP) finalMRP = 298.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 106.06
   } else if (productName.includes("Makeup Fixer Spray")) {
-    if (finalMRP !== 325) finalMRP = 325.00
-    if (!finalRate || finalRate > 200) finalRate = 115.67
+    if (!finalMRP) finalMRP = 325.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 115.67
   } else if (productName.includes("Misceller Water")) {
-    if (finalMRP !== 399) finalMRP = 399.00
-    if (!finalRate || finalRate > 200) finalRate = 142.01
+    if (!finalMRP) finalMRP = 399.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 142.01
   } else if (productName.includes("Nailpaint Remover")) {
-    if (finalMRP !== 55) finalMRP = 55.00
-    if (!finalRate || finalRate > 100) finalRate = 19.58
+    if (!finalMRP) finalMRP = 55.00
+    if (!finalRate || finalRate > 100) finalRate = finalRate || 19.58
   } else if (productName.includes("Ultra Lashlift Volumizing Mascara")) {
-    if (finalMRP !== 298) finalMRP = 298.00
-    if (!finalRate || finalRate > 200) finalRate = 106.06
+    if (!finalMRP) finalMRP = 298.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 106.06
   } else if (productName.includes("Neon Nailpaint") || productName.includes("Nailpaint-")) {
-    if (finalMRP !== 129) finalMRP = 129.00
-    if (!finalRate || finalRate > 100) finalRate = 45.92
+    if (!finalMRP) finalMRP = 129.00
+    if (!finalRate || finalRate > 100) finalRate = finalRate || 45.92
   } else if (productName.includes("Makeup Sponge")) {
-    if (finalMRP !== 299) finalMRP = 299.00
-    if (!finalRate || finalRate > 200) finalRate = 106.42
+    if (!finalMRP) finalMRP = 299.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 106.42
   } else if (productName.includes("Secondskin Matte Foundation")) {
-    if (finalMRP !== 599) finalMRP = 599.00
+    if (!finalMRP) finalMRP = 599.00
     if (!finalRate || finalRate > 300) finalRate = finalRate || 213.24
   } else if (productName.includes("Concealer")) {
-    if (finalMRP !== 498) finalMRP = 498.00
-    if (!finalRate || finalRate > 200) finalRate = 177.25
+    if (!finalMRP) finalMRP = 498.00
+    if (!finalRate || finalRate > 200) finalRate = finalRate || 177.25
   }
 
   return {

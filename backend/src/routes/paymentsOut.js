@@ -29,7 +29,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const distributorId = req.user.distributorId
     const paymentsOut = await prisma.paymentOut.findMany({
       where: { distributorId },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'asc' }
     })
     res.json(convertDecimals(paymentsOut))
   } catch (error) {

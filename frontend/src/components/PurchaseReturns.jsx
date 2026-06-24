@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Eye, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 const PURCHASE_API_URL = `${API_URL}/purchase`
@@ -23,6 +24,7 @@ function PurchaseReturns() {
   const [error, setError] = useState('')
   const [savedReturn, setSavedReturn] = useState(null)
   const [showList, setShowList] = useState(false)
+  const [viewReturn, setViewReturn] = useState(null)
   
   const supplierDropdownRef = useRef(null)
   const productDropdownRef = useRef(null)
@@ -60,18 +62,27 @@ function PurchaseReturns() {
   const fetchSuppliers = async () => {
     try {
       const res = await fetch(`${PURCHASE_API_URL}/suppliers`, { headers: getAuthHeaders() })
-      setSuppliers(await res.json())
+      const data = await res.json()
+      setSuppliers(data)
+
+      // Auto select CSA if available
+      if (data.length > 0) {
+        const firstSupplier = data[0]
+        setSupplierName(typeof firstSupplier === 'string' ? firstSupplier : firstSupplier.name)
+      }
     } catch (err) {
       console.error('Failed to fetch suppliers')
     }
   }
 
-  const filteredSuppliers = suppliers.filter(s => 
-    typeof s === 'string' && s.toLowerCase().includes(supplierName.toLowerCase())
-  )
+  const filteredSuppliers = suppliers.filter(s => {
+    const name = typeof s === 'string' ? s : s.name
+    return name.toLowerCase().includes(supplierName.toLowerCase())
+  })
 
   const selectSupplier = (supplier) => {
-    setSupplierName(supplier)
+    const name = typeof supplier === 'string' ? supplier : supplier.name
+    setSupplierName(name)
     setShowSupplierDropdown(false)
   }
 
@@ -96,6 +107,7 @@ function PurchaseReturns() {
       productName: typeof product.name === 'string' ? product.name : 'Unnamed Product',
       sku: typeof product.sku === 'string' ? product.sku : '-',
       qty: 1,
+      mrp: parseFloat(product.baseSellingPrice) || 0,
       costPrice: parseFloat(product.costPrice) || 0,
       gstPercentage: parseFloat(product.gstPercentage) || 0
     }
@@ -118,14 +130,18 @@ function PurchaseReturns() {
     const costPrice = parseFloat(item.costPrice) || 0
     const qty = parseInt(item.qty) || 0
     const gstPercentage = parseFloat(item.gstPercentage) || 0
-    const taxable = qty * costPrice
-    const gstAmount = (taxable * gstPercentage) / 100
+    
+    // User requested costPrice to be inclusive of GST and taxable to be without GST
+    const total = qty * costPrice
+    const taxable = total / (1 + (gstPercentage / 100))
+    const gstAmount = total - taxable
+
     // For purchase return, we'll assume same state unless specified
     const isInterState = false
     const cgst = !isInterState ? gstAmount / 2 : 0
     const sgst = !isInterState ? gstAmount / 2 : 0
     const igst = isInterState ? gstAmount : 0
-    const total = taxable + cgst + sgst + igst
+    
     return { taxable, cgst, sgst, igst, total }
   }
 
@@ -238,28 +254,40 @@ function PurchaseReturns() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Return No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Supplier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {purchaseReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
                       No purchase returns yet
                     </td>
                   </tr>
                 ) : (
-                  purchaseReturns.map(pr => (
+                  purchaseReturns.map((pr, index) => (
                     <tr key={pr.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-500">{index + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{pr.returnNo}</td>
                       <td className="px-4 py-3 text-gray-600">{pr.supplierName || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(pr.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-gray-600">{pr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">₹{parseFloat(pr.grandTotal).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => setViewReturn(pr)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="View Return"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -289,7 +317,7 @@ function PurchaseReturns() {
                       onClick={() => selectSupplier(supplier)}
                       className="px-4 py-3 hover:bg-blue-50 cursor-pointer"
                     >
-                      <div className="font-medium text-gray-800">{supplier}</div>
+                      <div className="font-medium text-gray-800">{typeof supplier === 'string' ? supplier : supplier.name}</div>
                     </div>
                   ))}
                 </div>
@@ -349,8 +377,9 @@ function PurchaseReturns() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MRP</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
-                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Cost Price</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Taxable</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GST%</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Total</th>
@@ -362,7 +391,7 @@ function PurchaseReturns() {
                 <tbody className="divide-y divide-gray-200">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={savedReturn ? 6 : 7} className="px-4 md:px-6 py-10 text-center text-gray-500">
+                      <td colSpan={savedReturn ? 7 : 8} className="px-4 md:px-6 py-10 text-center text-gray-500">
                         No items added yet
                       </td>
                     </tr>
@@ -374,6 +403,19 @@ function PurchaseReturns() {
                           <td className="px-3 md:px-4 py-3">
                             <div className="font-medium text-gray-800">{typeof item.productName === 'string' ? item.productName : '-'}</div>
                             <div className="text-xs text-gray-500">{typeof item.sku === 'string' ? item.sku : '-'}</div>
+                          </td>
+                          <td className="px-3 md:px-4 py-3">
+                            {savedReturn ? (
+                              <span className="font-medium">₹{(parseFloat(item.mrp) || 0).toFixed(2)}</span>
+                            ) : (
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={item.mrp || ''}
+                                onChange={(e) => updateItem(item.id, 'mrp', parseFloat(e.target.value) || 0)}
+                                className="w-20 md:w-24 px-2 py-1 border border-gray-300 rounded"
+                              />
+                            )}
                           </td>
                           <td className="px-3 md:px-4 py-3">
                             {savedReturn ? (
@@ -459,6 +501,85 @@ function PurchaseReturns() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* View Return Modal */}
+      {viewReturn && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Return Details: {viewReturn.returnNo}</h2>
+              <button
+                onClick={() => setViewReturn(null)}
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Supplier Info</h3>
+                  <p className="font-medium text-gray-800">{viewReturn.supplierName}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Return Info</h3>
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">Date:</span> {new Date(viewReturn.createdAt).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-700 mt-1">
+                    <span className="font-medium">Reason:</span> {viewReturn.reason || 'N/A'}
+                  </p>
+                  <p className="text-sm font-bold text-gray-900 mt-2 border-t border-gray-300 pt-2">
+                    Total Amount: ₹{parseFloat(viewReturn.grandTotal).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Returned Items</h3>
+              <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-gray-600 uppercase border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">No</th>
+                      <th className="px-4 py-3 font-semibold">Product Name</th>
+                      <th className="px-4 py-3 font-semibold">HSN</th>
+                      <th className="px-4 py-3 font-semibold text-right">Qty</th>
+                      <th className="px-4 py-3 font-semibold text-right">Cost Price</th>
+                      <th className="px-4 py-3 font-semibold text-right">Taxable</th>
+                      <th className="px-4 py-3 font-semibold text-right">GST %</th>
+                      <th className="px-4 py-3 font-semibold text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {viewReturn.purchaseReturnItems?.map((item, idx) => {
+                      const qty = parseInt(item.qty) || 0;
+                      const costPrice = parseFloat(item.costPrice) || 0;
+                      const gstPercentage = parseFloat(item.gstPercentage) || 0;
+                      
+                      const total = qty * costPrice;
+                      const taxable = total / (1 + (gstPercentage / 100));
+                      
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-gray-500">{idx + 1}</td>
+                          <td className="px-4 py-3 font-medium text-gray-800">{item.product?.name || '-'}</td>
+                          <td className="px-4 py-3 text-gray-600">{item.product?.hsn || '-'}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{qty}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">₹{costPrice.toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">₹{taxable.toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{gstPercentage}%</td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">₹{total.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

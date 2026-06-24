@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Edit2, Eye, Trash2, X, RefreshCw, Download } from 'lucide-react'
-
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => {
@@ -183,7 +184,101 @@ function CSAMyInvoices() {
   }
 
   const handlePrint = () => {
-    window.print()
+    if (!viewInvoice) return;
+
+    const doc = new jsPDF('p', 'pt', 'a4');
+
+    // Headers
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text("POPPIK LIFESTYLE PVT LTD", 40, 40);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("PAN No: AAQCP0247B | GSTIN: 27AAQCP0247B1ZK", 40, 55);
+    doc.text("Mobile: 8655324379 | Email: account@poppik.in", 40, 70);
+    doc.text("213 Sky Lark sector 11 belapur Thane, Maharashtra, 400614", 40, 85);
+
+    // Right aligned "Tax Invoice" and "Original For Recipient"
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("Tax Invoice", doc.internal.pageSize.width - 40, 40, { align: "right" });
+    doc.setFontSize(10);
+    doc.text("Original For Recipient", doc.internal.pageSize.width - 40, 55, { align: "right" });
+
+    // Meta Banner
+    doc.setFontSize(10);
+    doc.text(`Invoice No: ${viewInvoice.invoiceNo}`, 40, 110);
+    doc.text(`Invoice Date: ${new Date(viewInvoice.createdAt).toLocaleDateString()}`, 200, 110);
+    
+    // Bill To
+    doc.setFont("helvetica", "bold");
+    doc.text("Bill To:", 40, 140);
+    doc.setFont("helvetica", "normal");
+    doc.text(viewInvoice.distributor?.companyName || '-', 40, 155);
+    doc.text(`GSTIN: ${viewInvoice.distributor?.gstIn || '-'}`, 40, 170);
+    doc.text(`Mobile: ${viewInvoice.distributor?.phone || '-'}`, 40, 185);
+
+    // Ship To
+    doc.setFont("helvetica", "bold");
+    doc.text("Ship To:", doc.internal.pageSize.width / 2 + 20, 140);
+    doc.setFont("helvetica", "normal");
+    doc.text(viewInvoice.distributor?.companyName || '-', doc.internal.pageSize.width / 2 + 20, 155);
+    doc.text(`GSTIN: ${viewInvoice.distributor?.gstIn || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
+
+    // Items table
+    const tableColumn = ["No", "Product", "HSN No.", "MRP", "Qty", "Rate", "Margin %", "Taxable", "GST %", "Total"];
+    const tableRows = [];
+
+    viewInvoice.invoiceItems?.forEach((item, idx) => {
+      const mrp = parseFloat(item.product?.baseSellingPrice) || 0;
+      const rate = parseFloat(item.rate) || 0;
+      const qty = parseInt(item.qty) || 0;
+      const extraMarginPercentage = parseFloat(item.extraMarginPercentage) || 0;
+      const gstPercent = parseFloat(item.gstPercentage) || 18;
+
+      const rateWithMargin = rate * (1 - (extraMarginPercentage / 100));
+      const total = qty * rateWithMargin;
+      const taxable = total / (1 + (gstPercent / 100));
+
+      const itemData = [
+        ` ${idx + 1} `,
+        ` ${item.product?.name || '-'} `,
+        ` ${item.product?.hsn || '-'} `,
+        ` ${mrp.toFixed(2)} `,
+        ` ${qty} `,
+        ` ${rate.toFixed(2)} `,
+        ` ${extraMarginPercentage}% `,
+        ` ${taxable.toFixed(2)} `,
+        ` ${gstPercent}% `,
+        ` ${total.toFixed(2)} `
+      ];
+      tableRows.push(itemData);
+    });
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 210,
+      theme: 'grid',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [205, 168, 79], textColor: [255, 255, 255] },
+    });
+
+    // Totals
+    const finalY = doc.lastAutoTable.finalY + 20;
+    doc.setFont("helvetica", "bold");
+    doc.text(`Taxable Amount: Rs. ${parseFloat(viewInvoice.taxableValue).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY, { align: "right" });
+    if (parseFloat(viewInvoice.cgst) > 0) {
+      doc.text(`CGST: Rs. ${parseFloat(viewInvoice.cgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
+      doc.text(`SGST: Rs. ${parseFloat(viewInvoice.sgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 30, { align: "right" });
+    }
+    if (parseFloat(viewInvoice.igst) > 0) {
+      doc.text(`IGST: Rs. ${parseFloat(viewInvoice.igst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
+    }
+    doc.text(`Grand Total: Rs. ${parseFloat(viewInvoice.grandTotal).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 45, { align: "right" });
+
+    doc.save(`Invoice_${viewInvoice.invoiceNo}.pdf`);
   }
 
   if (loading) {

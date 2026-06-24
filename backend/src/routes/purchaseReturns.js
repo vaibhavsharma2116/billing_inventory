@@ -40,7 +40,7 @@ router.get('/', authenticateToken, async (req, res) => {
       include: {
         purchaseReturnItems: { include: { product: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'asc' }
     })
     res.json(convertDecimals(purchaseReturns))
   } catch (error) {

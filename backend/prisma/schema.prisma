@@ -95,6 +95,7 @@ model Party {
   address     String?
   creditLimit Decimal?
   phone       String?
+  margin      Decimal?
   distributorId String?
   distributor Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId       String?
@@ -228,11 +229,17 @@ model PurchaseItem {
   distributor  Distributor?    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId        String?
   csa          User?           @relation(fields: [csaId], references: [id], onDelete: Cascade)
-  qty          Int
-  costPrice    Decimal
-  batchNo      String?
-  expiryDate   DateTime?
-  createdAt    DateTime        @default(now())
+  qty           Int
+  costPrice     Decimal
+  mrp           Decimal?
+  rate          Decimal?
+  discount      Decimal?
+  gstPercentage Decimal?
+  total         Decimal?
+  sortOrder     Int?
+  batchNo       String?
+  expiryDate    DateTime?
+  createdAt     DateTime        @default(now())
 }
 
 enum ClaimStatus {

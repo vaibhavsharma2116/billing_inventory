@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Edit2, Eye } from 'lucide-react'
+import { Edit2, Eye, X, RefreshCw, Printer, Download } from 'lucide-react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -23,20 +25,42 @@ const isEditable = (createdAt) => {
   return invoiceDate >= threeDaysAgo
 }
 
+const extractPan = (gstin) => {
+  if (gstin && gstin.length === 15) {
+    return gstin.substring(2, 12);
+  }
+  return '-';
+}
+
 function InvoicesList() {
   const [invoices, setInvoices] = useState([])
+  const [filteredInvoices, setFilteredInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    fetchInvoices()
-  }, [])
+  const [parties, setParties] = useState([])
+  const [user, setUser] = useState(() => {
+    const userStr = localStorage.getItem('user')
+    return userStr ? JSON.parse(userStr) : null
+  })
+  const [filters, setFilters] = useState({
+    fromDate: '',
+    toDate: '',
+    partyId: ''
+  })
+  
+  const [viewInvoice, setViewInvoice] = useState(null)
+  const printRef = useRef()
 
-  const fetchInvoices = async () => {
+  async function fetchInvoices() {
     try {
       const res = await fetch(`${API_URL}/invoices`, { headers: getAuthHeaders() })
       if (res.ok) {
-        setInvoices(await res.json())
+        const data = await res.json()
+        // Sort ascending by createdAt (latest last)
+        const sortedData = data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+        setInvoices(sortedData)
+        setFilteredInvoices(sortedData)
       }
     } catch (err) {
       console.error('Failed to fetch invoices')
@@ -45,8 +69,177 @@ function InvoicesList() {
     }
   }
 
+  async function fetchParties() {
+    try {
+      const res = await fetch(`${API_URL}/parties`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setParties(await res.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch parties')
+    }
+  }
+
+  function applyFilters() {
+    let filtered = [...invoices]
+
+    if (filters.partyId) {
+      filtered = filtered.filter(invoice => invoice.partyId === filters.partyId)
+    }
+
+    if (filters.fromDate) {
+      const fromDate = new Date(filters.fromDate)
+      fromDate.setHours(0, 0, 0, 0)
+      filtered = filtered.filter(invoice => new Date(invoice.createdAt) >= fromDate)
+    }
+
+    if (filters.toDate) {
+      const toDate = new Date(filters.toDate)
+      toDate.setHours(23, 59, 59, 999)
+      filtered = filtered.filter(invoice => new Date(invoice.createdAt) <= toDate)
+    }
+
+    setFilteredInvoices(filtered)
+  }
+
+  function resetFilters() {
+    setFilters({
+      fromDate: '',
+      toDate: '',
+      partyId: ''
+    })
+  }
+
+  useEffect(() => {
+    fetchInvoices()
+    fetchParties()
+  }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [invoices, filters])
+
   const handleEdit = (invoice) => {
     navigate(`/billing?edit=${invoice.id}`)
+  }
+
+  const handleView = async (invoice) => {
+    try {
+      const res = await fetch(`${API_URL}/invoices/${invoice.id}`, { headers: getAuthHeaders() })
+      if (res.ok) {
+        setViewInvoice(await res.json())
+      } else {
+        alert('Failed to view invoice')
+      }
+    } catch (err) {
+      console.error('Failed to view invoice', err)
+    }
+  }
+
+  const handlePrint = () => {
+    if (!viewInvoice) return;
+
+    const doc = new jsPDF('p', 'pt', 'a4');
+
+    // Headers
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    const distName = viewInvoice.distributor?.companyName || user?.companyName || user?.name || "DISTRIBUTOR";
+    doc.text(distName, 40, 40);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    const gstIn = viewInvoice.distributor?.gstIn || user?.gstIn || '-';
+    const phone = viewInvoice.distributor?.phone || user?.phone || '-';
+    const email = viewInvoice.distributor?.email || user?.email || '-';
+    doc.text(`PAN No: ${extractPan(gstIn)} | GSTIN: ${gstIn}`, 40, 55);
+    doc.text(`Mobile: ${phone} | Email: ${email}`, 40, 70);
+    const address = viewInvoice.distributor?.address || user?.address || '';
+    const city = viewInvoice.distributor?.city || user?.city || '';
+    const addressLine = `${address} ${city ? city + ', ' : ''}Maharashtra`.trim();
+    doc.text(addressLine, 40, 85);
+
+    // Right aligned "Tax Invoice" and "Original For Recipient"
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("Tax Invoice", doc.internal.pageSize.width - 40, 40, { align: "right" });
+    doc.setFontSize(10);
+    doc.text("Original For Recipient", doc.internal.pageSize.width - 40, 55, { align: "right" });
+
+    // Meta Banner
+    doc.setFontSize(10);
+    doc.text(`Invoice No: ${viewInvoice.invoiceNo}`, 40, 110);
+    doc.text(`Invoice Date: ${new Date(viewInvoice.createdAt).toLocaleDateString()}`, 200, 110);
+    
+    // Bill To
+    doc.setFont("helvetica", "bold");
+    doc.text("Bill To:", 40, 140);
+    doc.setFont("helvetica", "normal");
+    doc.text(viewInvoice.party?.name || '-', 40, 155);
+    doc.text(`GSTIN: ${viewInvoice.party?.gstin || '-'}`, 40, 170);
+    doc.text(`Mobile: ${viewInvoice.party?.phone || '-'}`, 40, 185);
+
+    // Ship To
+    doc.setFont("helvetica", "bold");
+    doc.text("Ship To:", doc.internal.pageSize.width / 2 + 20, 140);
+    doc.setFont("helvetica", "normal");
+    doc.text(viewInvoice.party?.name || '-', doc.internal.pageSize.width / 2 + 20, 155);
+    doc.text(`GSTIN: ${viewInvoice.party?.gstin || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
+
+    // Items table
+    const tableColumn = ["No", "Product", "HSN No.", "MRP", "Qty", "Rate", "Margin %", "Taxable", "GST %", "Total"];
+    const tableRows = [];
+
+    viewInvoice.invoiceItems?.forEach((item, idx) => {
+      const mrp = parseFloat(item.mrp) || parseFloat(item.product?.baseSellingPrice) || 0;
+      const rateWithGst = parseFloat(item.rate) || 0;
+      const qty = parseInt(item.qty) || 0;
+      const extraMarginPercentage = parseFloat(item.extraMarginPercentage) || 0;
+      const gstPercent = parseFloat(item.gstPercentage) || 18;
+
+      const rateExcludingGst = rateWithGst / (1 + (gstPercent / 100));
+      const taxableAfterMargin = rateExcludingGst * qty;
+      const taxAmt = taxableAfterMargin * (gstPercent / 100);
+      const itemTotal = taxableAfterMargin + taxAmt;
+
+      const itemData = [
+        ` ${idx + 1} `,
+        ` ${item.productName || item.product?.name || '-'} `,
+        ` ${item.hsn || item.product?.hsn || '-'} `,
+        ` ${mrp.toFixed(2)} `,
+        ` ${qty} `,
+        ` ${rateWithGst.toFixed(2)} `,
+        ` ${extraMarginPercentage}% `,
+        ` ${taxableAfterMargin.toFixed(2)} `,
+        ` ${gstPercent}% `,
+        ` ${itemTotal.toFixed(2)} `
+      ];
+      tableRows.push(itemData);
+    });
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 210,
+      theme: 'grid',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [205, 168, 79], textColor: [255, 255, 255] },
+    });
+
+    // Totals
+    const finalY = doc.lastAutoTable.finalY + 20;
+    doc.setFont("helvetica", "bold");
+    doc.text(`Taxable Amount: Rs. ${parseFloat(viewInvoice.taxableValue).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY, { align: "right" });
+    if (parseFloat(viewInvoice.cgst) > 0) {
+      doc.text(`CGST: Rs. ${parseFloat(viewInvoice.cgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
+      doc.text(`SGST: Rs. ${parseFloat(viewInvoice.sgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 30, { align: "right" });
+    }
+    if (parseFloat(viewInvoice.igst) > 0) {
+      doc.text(`IGST: Rs. ${parseFloat(viewInvoice.igst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
+    }
+    doc.text(`Grand Total: Rs. ${parseFloat(viewInvoice.grandTotal).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 45, { align: "right" });
+
+    doc.save(`Invoice_${viewInvoice.invoiceNo}.pdf`);
   }
 
   if (loading) {
@@ -72,11 +265,58 @@ function InvoicesList() {
         </button>
       </div>
 
+      {/* Filters Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+            <input
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+            <input
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Customer / Party</label>
+            <select
+              value={filters.partyId}
+              onChange={(e) => setFilters({ ...filters, partyId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
+            >
+              <option value="">All Parties</option>
+              {parties.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              onClick={resetFilters}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition flex items-center gap-2 w-full justify-center"
+            >
+              <RefreshCw size={18} />
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">#</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Invoice No</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Party</th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Grand Total</th>
@@ -86,15 +326,18 @@ function InvoicesList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {invoices.length === 0 ? (
+              {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                    No invoices yet
+                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                    No invoices match your filters
                   </td>
                 </tr>
               ) : (
-                invoices.map((invoice) => (
+                filteredInvoices.map((invoice, index) => (
                   <tr key={invoice.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-500 font-medium">
+                      {index + 1}
+                    </td>
                     <td className="px-6 py-4">
                       <span className="font-semibold text-gray-900">{invoice.invoiceNo}</span>
                     </td>
@@ -130,6 +373,7 @@ function InvoicesList() {
                           </button>
                         )}
                         <button
+                          onClick={() => handleView(invoice)}
                           className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition"
                           title="View Invoice"
                         >
@@ -144,6 +388,137 @@ function InvoicesList() {
           </table>
         </div>
       </div>
+
+      {/* View Invoice Modal */}
+      {viewInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-100">
+              <h2 className="text-xl font-bold text-gray-800">Invoice {viewInvoice.invoiceNo}</h2>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePrint}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+                >
+                  <Download size={18} />
+                  Download PDF
+                </button>
+                <button
+                  onClick={() => setViewInvoice(null)}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Distributor</h3>
+                  <p className="font-medium text-gray-800">{viewInvoice.distributor?.companyName || user?.companyName || user?.name || '-'}</p>
+                  {(viewInvoice.distributor?.gstIn || user?.gstIn) && <p className="text-sm text-gray-600">GSTIN: {viewInvoice.distributor?.gstIn || user?.gstIn}</p>}
+                  {(viewInvoice.distributor?.phone || user?.phone) && <p className="text-sm text-gray-600">Phone: {viewInvoice.distributor?.phone || user?.phone}</p>}
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Invoice Info</h3>
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">Date:</span> {new Date(viewInvoice.createdAt).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">Taxable:</span> {formatCurrency(viewInvoice.taxableValue)}
+                  </p>
+                  {(parseFloat(viewInvoice.cgst) > 0 || (parseFloat(viewInvoice.igst) === 0 && parseFloat(viewInvoice.cgst) === 0)) && (
+                    <p className="text-sm text-gray-700">
+                      <span className="font-medium">CGST:</span> {formatCurrency(viewInvoice.cgst)}
+                    </p>
+                  )}
+                  {(parseFloat(viewInvoice.sgst) > 0 || (parseFloat(viewInvoice.igst) === 0 && parseFloat(viewInvoice.sgst) === 0)) && (
+                    <p className="text-sm text-gray-700">
+                      <span className="font-medium">SGST:</span> {formatCurrency(viewInvoice.sgst)}
+                    </p>
+                  )}
+                  {parseFloat(viewInvoice.igst) > 0 && (
+                    <p className="text-sm text-gray-700">
+                      <span className="font-medium">IGST:</span> {formatCurrency(viewInvoice.igst)}
+                    </p>
+                  )}
+                  <p className="text-sm font-bold text-gray-900 mt-2 border-t border-gray-300 pt-2">
+                    Total: {formatCurrency(viewInvoice.grandTotal)}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Items</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">HSN</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">MRP</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Rate</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Margin %</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Taxable</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">GST %</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {viewInvoice.invoiceItems?.map((item, idx) => {
+                        const mrp = parseFloat(item.mrp) || parseFloat(item.product?.baseSellingPrice) || 0
+                        const rateWithGst = parseFloat(item.rate) || 0
+                        const gstPercentage = parseFloat(item.gstPercentage) || 18
+                        const qty = parseInt(item.qty) || 0
+                        const extraMarginPercentage = parseFloat(item.extraMarginPercentage) || 0
+
+                        const rateExcludingGst = rateWithGst / (1 + (gstPercentage / 100))
+                        const taxableAfterMargin = rateExcludingGst * qty
+                        const taxAmt = taxableAfterMargin * (gstPercentage / 100)
+                        const itemTotal = taxableAfterMargin + taxAmt
+
+                        return (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-3 py-3 text-sm text-gray-800">{item.productName || item.product?.name || '-'}</td>
+                            <td className="px-3 py-3 text-sm text-gray-600">{item.hsn || item.product?.hsn || '-'}</td>
+                            <td className="px-3 py-3 text-sm text-gray-600">{formatCurrency(mrp)}</td>
+                            <td className="px-3 py-3 text-sm text-right text-gray-700">{qty}</td>
+                            <td className="px-3 py-3 text-sm text-right text-gray-700">{formatCurrency(rateWithGst)}</td>
+                            <td className="px-3 py-3 text-sm text-right text-gray-700">{extraMarginPercentage}%</td>
+                            <td className="px-3 py-3 text-sm text-right text-gray-700">{formatCurrency(taxableAfterMargin)}</td>
+                            <td className="px-3 py-3 text-sm text-right text-gray-700">{gstPercentage}%</td>
+                            <td className="px-3 py-3 text-sm text-right font-medium text-gray-900">{formatCurrency(itemTotal)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          .print-content, .print-content * {
+            visibility: visible !important;
+          }
+          .print-content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   )
 }

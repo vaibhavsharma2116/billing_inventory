@@ -122,6 +122,22 @@ function Products() {
     }
   }
 
+  const handleDeleteAll = async () => {
+    if (!window.confirm('Are you absolutely sure you want to delete ALL products? This action cannot be undone!')) return
+    try {
+      setLoading(true)
+      const res = await fetch(`${API_URL}/all`, { 
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      if (!res.ok) throw new Error('Failed to delete all products')
+      fetchProducts()
+    } catch (err) {
+      setError('Failed to delete all products')
+      setLoading(false)
+    }
+  }
+
   const isLowStock = (stock) => stock < 10
   const isNearExpiry = (expiry) => {
     if (!expiry) return false
@@ -134,12 +150,22 @@ function Products() {
     <div className="p-4 md:p-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Inventory & Products</h1>
-        <button
-          onClick={openAddModal}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition"
-        >
-          + Add New Product
-        </button>
+        <div className="flex gap-3">
+          {products.length > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition"
+            >
+              Delete All
+            </button>
+          )}
+          <button
+            onClick={openAddModal}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition"
+          >
+            + Add New Product
+          </button>
+        </div>
       </div>
 
       {error && (

@@ -1000,8 +1000,7 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
       }
 
       const invoiceItemsData = productsData.map(({ product, qty, rate, gstPercentage, extraMarginPercentage }) => {
-        const rateWithMargin = rate * (1 - ((extraMarginPercentage || 0) / 100))
-        const total = qty * rateWithMargin // GST already included in rate
+        const total = qty * rate // GST already included in rate
         return {
           productId: product.id,
           qty,
@@ -1017,8 +1016,7 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
         const product = productsData[i].product
-        const rateWithMargin = item.rate * (1 - ((item.extraMarginPercentage || 0) / 100))
-        const total = item.qty * rateWithMargin
+        const total = item.qty * item.rate
         // Rate is with GST, so taxable value should be without GST (less GST)
         const gstPercent = getNum(product.gstPercentage) || 18
         const taxable = total / (1 + (gstPercent / 100))
@@ -3033,7 +3031,7 @@ router.get('/my-purchases', authenticateToken, requireCSA, async (req, res) => {
       include: {
         purchaseItems: {
           include: { product: true },
-          orderBy: { sortOrder: 'asc' }
+          orderBy: { id: 'asc' }
         }
       },
       orderBy: { createdAt: 'asc' }
@@ -3341,9 +3339,9 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
             productId: product.id,
             qty: parseInt(item.qty, 10) || 0,
             mrp: cleanedValues.mrp || parseFloat(item.mrp) || null,
-            costPrice: parseFloat(item.rate) || null,
+            costPrice: parseFloat(item.rate) || 0,
             rate: cleanedValues.rate || parseFloat(item.rate) || 0,
-            discount: cleanedValues.discount || null,
+            discount: cleanedValues.discount || parseFloat(item.discount) || null,
             gstPercentage,
             total: itemTotal,
             batchNo: item.batchNo || null,
@@ -3759,22 +3757,47 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
           } 
  
           // 2. PRODUCT DETECTOR (Flexible multi-line reconstruction) 
-          if (/poppik/i.test(line)) { 
+          const isPoppikLine = /poppik/i.test(line);
+          const isCsaLine = /\b\d{8}\b/.test(line) && /\(\d+%\)/.test(line);
+
+          if (isPoppikLine || isCsaLine) { 
             let fullRowText = line; 
  
             // Look-ahead buffer to stitch columns together safely 
             let forwardIndex = i + 1; 
             while ( 
               forwardIndex < lines.length && 
-              !/poppik/i.test(lines[forwardIndex]) && 
+              !(/poppik/i.test(lines[forwardIndex]) || (/\b\d{8}\b/.test(lines[forwardIndex]) && /\(\d+%\)/.test(lines[forwardIndex]))) && 
               !/SUBTOTAL/i.test(lines[forwardIndex]) && 
               !/Taxable Amount/i.test(lines[forwardIndex]) && 
-              !/CGST|SGST/i.test(lines[forwardIndex]) 
+              !/CGST|SGST/i.test(lines[forwardIndex]) &&
+              !/Grand Total/i.test(lines[forwardIndex])
             ) { 
               fullRowText += " " + lines[forwardIndex]; 
               forwardIndex++; 
             } 
             i = forwardIndex - 1; // Update iterator pointer safely 
+
+            if (isCsaLine) {
+               console.log("Processing CSA line:", fullRowText);
+               let csaLine = fullRowText.replace(/^\d+\s+/, '');
+               const match = csaLine.match(/(.*?)\s+(\d{8})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\(\d+%\)\s+([\d.]+)/);
+               if (match) {
+                 const taxPctMatch = fullRowText.match(/\((\d+)%\)/);
+                 parsedProducts.push({
+                   productName: match[1].trim(),
+                   hsn: String(match[2]),
+                   qty: parseInt(match[3], 10) || 0,
+                   mrp: parseFloat(match[4]) || 0,
+                   rate: parseFloat(match[5]) || 0,
+                   discount: parseFloat(match[6]) || 0,
+                   tax: taxPctMatch ? `${taxPctMatch[1]}%` : "18%",
+                   total: parseFloat(match[8]) || 0
+                 });
+                 console.log("✅ Added CSA parsed product:", match[1].trim());
+               }
+               continue;
+            }
  
             // 3. CLEAN COMPONENT EXTRACTIONS 
             // FIRST: Fix the fullRowText to split product variants from HSN!
@@ -4188,7 +4211,7 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
             sortOrder: index,
             qty: cleanQty,
             mrp: cleanMRP || null,
-            costPrice: cleanCostPrice || null,
+            costPrice: cleanCostPrice || 0,
             rate: finalRate,
             discount: finalDiscount,
             gstPercentage,
@@ -4247,7 +4270,7 @@ router.get('/my-purchases/:id', authenticateToken, requireCSA, async (req, res) 
       include: {
         purchaseItems: {
           include: { product: true },
-          orderBy: { sortOrder: 'asc' }
+          orderBy: { id: 'asc' }
         }
       }
     })
@@ -4650,9 +4673,10 @@ router.post('/my-invoices/create', authenticateToken, requireCSA, async (req, re
       let totalIGST = 0
 
       for (const item of items) {
-        const taxable = item.qty * item.rate
+        const total = item.qty * item.rate
+        const taxable = total / (1 + (item.gstPercentage / 100))
         totalTaxable += taxable
-        const gstAmount = (taxable * item.gstPercentage) / 100
+        const gstAmount = total - taxable
         if (isInterState) {
           totalIGST += gstAmount
         } else {
@@ -4670,7 +4694,7 @@ router.post('/my-invoices/create', authenticateToken, requireCSA, async (req, re
         rate: item.rate,
         gstPercentage: item.gstPercentage,
         extraMarginPercentage: item.extraMarginPercentage || 0,
-        total: (item.qty * item.rate) + ((item.qty * item.rate * item.gstPercentage) / 100),
+        total: item.qty * item.rate,
         csaId
       }))
 

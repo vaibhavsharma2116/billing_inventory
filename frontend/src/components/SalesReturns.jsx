@@ -48,7 +48,7 @@ function SalesReturns() {
     }
   }, [])
 
-  const fetchParties = async () => {
+  async function fetchParties() {
     try {
       const res = await fetch(`${API_URL}/parties`, { headers: getAuthHeaders() })
       setParties(await res.json())
@@ -57,7 +57,7 @@ function SalesReturns() {
     }
   }
 
-  const fetchProducts = async () => {
+  async function fetchProducts() {
     try {
       const res = await fetch(`${API_URL}/products`, { headers: getAuthHeaders() })
       setProducts(await res.json())
@@ -66,7 +66,7 @@ function SalesReturns() {
     }
   }
 
-  const fetchSalesReturns = async () => {
+  async function fetchSalesReturns() {
     try {
       const res = await fetch(`${API_URL}/sales-returns`, { headers: getAuthHeaders() })
       setSalesReturns(await res.json())
@@ -92,14 +92,26 @@ function SalesReturns() {
   }
 
   const addProduct = (product) => {
+    if (product.currentStock <= 0) {
+      alert("This product is out of stock (Stock: 0) and cannot be added.");
+      return;
+    }
+
+    const partyMargin = selectedParty ? (parseFloat(selectedParty.margin) || 0) : 0;
+    const mrp = parseFloat(product.baseSellingPrice) || 0;
+    const calculatedRate = mrp - (mrp * partyMargin / 100);
+
     const newItem = {
       id: Date.now(),
       productId: product.id,
       productName: typeof product.name === 'string' ? product.name : 'Unnamed Product',
       sku: typeof product.sku === 'string' ? product.sku : '-',
+      hsn: typeof product.hsn === 'string' ? product.hsn : '-',
       batchNo: typeof product.batchNo === 'string' ? product.batchNo : '',
       qty: 1,
-      rate: parseFloat(product.baseSellingPrice) || 0,
+      mrp: mrp,
+      extraMarginPercentage: partyMargin,
+      rate: calculatedRate,
       costPrice: parseFloat(product.costPrice) || 0,
       gstPercentage: parseFloat(product.gstPercentage) || 0
     }
@@ -109,9 +121,19 @@ function SalesReturns() {
   }
 
   const updateItem = (id, field, value) => {
-    setItems(items.map(item => 
-      item.id === id ? { ...item, [field]: value } : item
-    ))
+    setItems(items.map(item => {
+      if (item.id === id) {
+        let updatedItem = { ...item, [field]: value }
+        
+        if (field === 'extraMarginPercentage') {
+           const margin = parseFloat(value) || 0;
+           updatedItem.rate = item.mrp - (item.mrp * margin / 100);
+        }
+        
+        return updatedItem;
+      }
+      return item;
+    }))
   }
 
   const removeItem = (id) => {
@@ -128,13 +150,13 @@ function SalesReturns() {
     const rate = parseFloat(item.rate) || 0
     const qty = parseInt(item.qty) || 0
     const gstPercentage = parseFloat(item.gstPercentage) || 0
-    const taxable = qty * rate
-    const gstAmount = (taxable * gstPercentage) / 100
+    const total = rate * qty
+    const taxable = total / (1 + (gstPercentage / 100))
+    const gstAmount = total - taxable
     const gstType = getGstType()
     const cgst = gstType === 'cgst_sgst' ? gstAmount / 2 : 0
     const sgst = gstType === 'cgst_sgst' ? gstAmount / 2 : 0
     const igst = gstType === 'igst' ? gstAmount : 0
-    const total = taxable + cgst + sgst + igst
     return { taxable, cgst, sgst, igst, total }
   }
 
@@ -174,6 +196,8 @@ function SalesReturns() {
         productId: item.productId,
         qty: item.qty,
         rate: item.rate,
+        mrp: item.mrp,
+        extraMarginPercentage: item.extraMarginPercentage,
         costPrice: item.costPrice,
         gstPercentage: item.gstPercentage
       }))
@@ -381,8 +405,11 @@ function SalesReturns() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MRP</th>
+                    <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Margin %</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Taxable</th>
                     <th className="px-3 md:px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GST%</th>
@@ -395,7 +422,7 @@ function SalesReturns() {
                 <tbody className="divide-y divide-gray-200">
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={savedReturn ? 7 : 8} className="px-4 md:px-6 py-10 text-center text-gray-500">
+                      <td colSpan={savedReturn ? 10 : 11} className="px-4 md:px-6 py-10 text-center text-gray-500">
                         No items added yet
                       </td>
                     </tr>
@@ -408,6 +435,7 @@ function SalesReturns() {
                             <div className="font-medium text-gray-800">{typeof item.productName === 'string' ? item.productName : '-'}</div>
                             <div className="text-xs text-gray-500">{typeof item.sku === 'string' ? item.sku : '-'}</div>
                           </td>
+                          <td className="px-3 md:px-4 py-3 text-gray-600">{(typeof item.hsn === 'string' && item.hsn) ? item.hsn : '-'}</td>
                           <td className="px-3 md:px-4 py-3 text-gray-600">{(typeof item.batchNo === 'string' && item.batchNo) ? item.batchNo : '-'}</td>
                           <td className="px-3 md:px-4 py-3">
                             {savedReturn ? (
@@ -418,6 +446,20 @@ function SalesReturns() {
                                 min="1"
                                 value={item.qty}
                                 onChange={(e) => updateItem(item.id, 'qty', parseInt(e.target.value) || 1)}
+                                className="w-16 md:w-20 px-2 py-1 border border-gray-300 rounded"
+                              />
+                            )}
+                          </td>
+                          <td className="px-3 md:px-4 py-3 font-medium text-gray-700">₹{(parseFloat(item.mrp) || 0).toFixed(2)}</td>
+                          <td className="px-3 md:px-4 py-3">
+                            {savedReturn ? (
+                              <span className="font-medium">{(parseFloat(item.extraMarginPercentage) || 0)}%</span>
+                            ) : (
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={item.extraMarginPercentage}
+                                onChange={(e) => updateItem(item.id, 'extraMarginPercentage', parseFloat(e.target.value) || 0)}
                                 className="w-16 md:w-20 px-2 py-1 border border-gray-300 rounded"
                               />
                             )}
