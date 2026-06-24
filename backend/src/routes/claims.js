@@ -5,8 +5,9 @@ const { authenticateToken, requireDistributor } = require('../middleware/auth')
 
 const convertDecimals = (obj, keyName) => {
   if (!obj) return obj
+  if (obj instanceof Date) return obj
   // Skip converting phone numbers, names, gstins, addresses, dates, etc.
-  if (['phone', 'name', 'gstin', 'address', 'id', 'invoiceNo', 'batchNo', 'hsn', 'sku', 'brandName', 'claimDetails', 'status', 'date', 'createdAt', 'updatedAt', 'expiryDate', 'distributorId', 'createdByRole', 'createdByUserId'].includes(keyName)) {
+  if (['phone', 'name', 'gstin', 'address', 'id', 'invoiceNo', 'batchNo', 'hsn', 'sku', 'brandName', 'claimDetails', 'status', 'date', 'invoiceDate', 'createdAt', 'updatedAt', 'expiryDate', 'distributorId', 'createdByRole', 'createdByUserId', 'month'].includes(keyName)) {
     return obj
   }
   if (typeof obj === 'string' && !isNaN(obj) && obj.trim() !== '') {
@@ -40,20 +41,72 @@ router.get('/extra-margin', authenticateToken, requireDistributor, async (req, r
       include: { product: true, invoice: true }
     })
 
-    const claims = invoiceItems.map(item => {
-      const baseAmount = item.qty * item.rate
-      const marginAmount = (baseAmount * item.extraMarginPercentage) / 100
+    const salesReturnItems = await prisma.salesReturnItem.findMany({
+      where: {
+        salesReturn: { distributorId: req.user.distributorId, date: { gte: start, lte: end } }
+      },
+      include: { product: true, salesReturn: true }
+    })
+
+    const productMarginMap = {}
+
+    const invoiceClaims = invoiceItems.map(item => {
+      const getNum = (val) => {
+        if (typeof val === 'number') return val
+        if (val?.toNumber) return val.toNumber()
+        return parseFloat(val) || 0
+      }
+      
+      const marginPct = getNum(item.extraMarginPercentage)
+      if (!productMarginMap[item.productId]) {
+        productMarginMap[item.productId] = { totalPct: 0, count: 0 }
+      }
+      productMarginMap[item.productId].totalPct += marginPct
+      productMarginMap[item.productId].count += 1
+
+      const baseAmount = item.qty * getNum(item.rate)
+      const marginAmount = (baseAmount * marginPct) / 100
+      
       return {
         id: item.id,
         productName: item.product.name,
         invoiceNo: item.invoice.invoiceNo,
         invoiceDate: item.invoice.date,
         qty: item.qty,
-        rate: item.rate,
-        extraMarginPercentage: item.extraMarginPercentage,
+        rate: getNum(item.rate),
+        extraMarginPercentage: marginPct,
         claimAmount: marginAmount
       }
     })
+
+    const returnClaims = salesReturnItems.filter(sr => productMarginMap[sr.productId]).map(sr => {
+      const getNum = (val) => {
+        if (typeof val === 'number') return val
+        if (val?.toNumber) return val.toNumber()
+        return parseFloat(val) || 0
+      }
+
+      const mapData = productMarginMap[sr.productId]
+      const avgPct = mapData.count > 0 ? (mapData.totalPct / mapData.count) : 0
+      
+      const baseAmount = sr.qty * getNum(sr.rate)
+      const marginAmount = (baseAmount * avgPct) / 100
+
+      return {
+        id: sr.id,
+        productName: sr.product.name,
+        invoiceNo: sr.salesReturn.returnNo + ' (Return)',
+        invoiceDate: sr.salesReturn.date,
+        qty: -sr.qty,
+        rate: getNum(sr.rate),
+        extraMarginPercentage: avgPct,
+        claimAmount: -marginAmount
+      }
+    })
+
+    const claims = [...invoiceClaims, ...returnClaims]
+    // Sort by date descending
+    claims.sort((a, b) => new Date(b.invoiceDate) - new Date(a.invoiceDate))
 
     const totalClaimAmount = claims.reduce((sum, c) => sum + c.claimAmount, 0)
 
@@ -165,14 +218,18 @@ router.get('/gst-summary', authenticateToken, requireDistributor, async (req, re
 
     const invoices = await prisma.invoice.findMany({
       where: { distributorId: req.user.distributorId, date: { gte: start, lte: end } },
-      include: { invoiceItems: true },
+      orderBy: { date: 'asc' }
+    })
+
+    const salesReturns = await prisma.salesReturn.findMany({
+      where: { distributorId: req.user.distributorId, date: { gte: start, lte: end } },
       orderBy: { date: 'asc' }
     })
 
     const monthlyData = {}
 
-    invoices.forEach(invoice => {
-      const date = new Date(invoice.date)
+    const processRecord = (record, isReturn = false) => {
+      const date = new Date(record.date)
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' })
 
@@ -190,14 +247,21 @@ router.get('/gst-summary', authenticateToken, requireDistributor, async (req, re
       const getNum = (val) => {
         if (typeof val === 'number') return val
         if (val?.toNumber) return val.toNumber()
-        return parseFloat(val)
+        if (typeof val === 'string' && !isNaN(parseFloat(val))) return parseFloat(val)
+        return 0
       }
-      monthlyData[key].taxableValue += getNum(invoice.taxableValue)
-      monthlyData[key].cgst += getNum(invoice.cgst)
-      monthlyData[key].sgst += getNum(invoice.sgst)
-      monthlyData[key].igst += getNum(invoice.igst)
-      monthlyData[key].total += getNum(invoice.grandTotal)
-    })
+
+      const multiplier = isReturn ? -1 : 1
+
+      monthlyData[key].taxableValue += (getNum(record.taxableValue) * multiplier)
+      monthlyData[key].cgst += (getNum(record.cgst) * multiplier)
+      monthlyData[key].sgst += (getNum(record.sgst) * multiplier)
+      monthlyData[key].igst += (getNum(record.igst) * multiplier)
+      monthlyData[key].total += (getNum(record.grandTotal) * multiplier)
+    }
+
+    invoices.forEach(inv => processRecord(inv, false))
+    salesReturns.forEach(sr => processRecord(sr, true))
 
     const gstReport = Object.values(monthlyData).sort((a, b) => {
       const [yearA, monthA] = a.month.split(' ').reverse()
