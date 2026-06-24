@@ -275,10 +275,10 @@ router.get('/csas/:id', authenticateToken, requireSuperAdmin, async (req, res) =
       where: { csaId: id, date: whereDateRange }
     })
     const totalParties = await prisma.party.count({
-      where: { OR: distributors.map(d => ({ distributorId: d.id })) }
+      where: { csaId: id }
     })
     const totalProducts = await prisma.product.count({
-      where: { OR: distributors.map(d => ({ distributorId: d.id })) }
+      where: { csaId: id }
     })
     const totalClaims = await prisma.claim.count({
       where: { csaId: id, createdAt: whereDateRange }
@@ -334,7 +334,7 @@ router.get('/csas/:id', authenticateToken, requireSuperAdmin, async (req, res) =
     const allPaymentsOut = paymentsOut.map(po => ({ ...po, distributorName: distributorMap[po.distributorId] }))
 
     const parties = await prisma.party.findMany({
-      where: { OR: distributors.map(d => ({ distributorId: d.id })) },
+      where: { csaId: id },
       include: {
         invoices: {
           where: { csaId: id, date: whereDateRange }
@@ -344,7 +344,7 @@ router.get('/csas/:id', authenticateToken, requireSuperAdmin, async (req, res) =
     const allParties = parties.map(p => ({ ...p, distributorName: distributorMap[p.distributorId] }))
 
     const products = await prisma.product.findMany({
-      where: { OR: distributors.map(d => ({ distributorId: d.id })) },
+      where: { csaId: id },
       include: {
         invoiceItems: {
           where: { invoice: { csaId: id, date: whereDateRange } },
@@ -516,12 +516,12 @@ router.get('/distributors', authenticateToken, requireSuperAdmin, async (req, re
         _sum: { amount: true }
       })
       
-      const totalSales = totalSalesAgg._sum.grandTotal || 0
-      const totalSalesReturns = totalSalesReturnsAgg._sum.grandTotal || 0
+      const totalSales = getNum(totalSalesAgg._sum.grandTotal || 0)
+      const totalSalesReturns = getNum(totalSalesReturnsAgg._sum.grandTotal || 0)
       const totalRevenue = totalSales - totalSalesReturns
-      const totalPaymentsReceived = totalPaymentsInAgg._sum.amount || 0
-      const totalPurchaseReturns = totalPurchaseReturnsAgg._sum.grandTotal || 0
-      const totalPaymentsOut = totalPaymentsOutAgg._sum.amount || 0
+      const totalPaymentsReceived = getNum(totalPaymentsInAgg._sum.amount || 0)
+      const totalPurchaseReturns = getNum(totalPurchaseReturnsAgg._sum.grandTotal || 0)
+      const totalPaymentsOut = getNum(totalPaymentsOutAgg._sum.amount || 0)
       
       const invoiceCount = await prisma.invoice.count({
         where: { distributorId: dist.id, csaId: null, date: whereDateRange }

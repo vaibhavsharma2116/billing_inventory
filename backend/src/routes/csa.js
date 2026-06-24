@@ -282,6 +282,61 @@ router.get('/claims/extra-margin', authenticateToken, requireCSA, async (req, re
       }
     })
 
+    // Fetch Sales Returns to deduct from claims
+    const salesReturnItems = await prisma.salesReturnItem.findMany({
+      where: {
+        salesReturn: {
+          csaId,
+          distributorId: { in: distributorIds },
+          date: dateRange
+        }
+      },
+      include: {
+        product: true,
+        salesReturn: {
+          include: {
+            distributor: true
+          }
+        }
+      }
+    })
+
+    // Group invoice claims by product to find the average extra margin percentage claimed
+    const productMarginAverages = {}
+    invoiceItems.forEach(item => {
+      if (!productMarginAverages[item.productId]) {
+        productMarginAverages[item.productId] = { totalMarginPercent: 0, count: 0 }
+      }
+      productMarginAverages[item.productId].totalMarginPercent += item.extraMarginPercentage
+      productMarginAverages[item.productId].count += 1
+    })
+
+    salesReturnItems.forEach(item => {
+      const avgData = productMarginAverages[item.productId]
+      if (avgData && avgData.count > 0) {
+        const avgMargin = avgData.totalMarginPercent / avgData.count
+        const baseAmount = item.qty * item.rate
+        const marginDeduction = (baseAmount * avgMargin) / 100
+
+        if (marginDeduction > 0) {
+          claims.push({
+            id: item.id + '-return',
+            productName: item.product?.name,
+            distributorName: item.salesReturn?.distributor?.companyName,
+            invoiceNo: item.salesReturn?.returnNo || 'Return',
+            invoiceDate: item.salesReturn?.date,
+            qty: -item.qty,
+            rate: item.rate,
+            extraMarginPercentage: avgMargin,
+            claimAmount: -marginDeduction
+          })
+        }
+      }
+    })
+
+    // Sort claims by date descending
+    claims.sort((a, b) => new Date(b.invoiceDate) - new Date(a.invoiceDate))
+
     const totalClaimAmount = claims.reduce((sum, c) => sum + c.claimAmount, 0)
 
     res.json(convertDecimals({
@@ -467,6 +522,44 @@ router.get('/claims/gst-summary', authenticateToken, requireCSA, async (req, res
       monthlyData[key].total += getNum(invoice.grandTotal)
     })
 
+    const salesReturns = await prisma.salesReturn.findMany({
+      where: {
+        csaId,
+        distributorId: { in: distributorIds },
+        date: dateRange
+      },
+      orderBy: { date: 'asc' }
+    })
+
+    salesReturns.forEach(sr => {
+      const date = new Date(sr.date)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' })
+
+      if (!monthlyData[key]) {
+        monthlyData[key] = {
+          month: monthName,
+          taxableValue: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          total: 0
+        }
+      }
+
+      const getNum = (val) => {
+        if (typeof val === 'number') return val
+        if (val?.toNumber) return val.toNumber()
+        return parseFloat(val)
+      }
+
+      monthlyData[key].taxableValue -= getNum(sr.taxableValue)
+      monthlyData[key].cgst -= getNum(sr.cgst)
+      monthlyData[key].sgst -= getNum(sr.sgst)
+      monthlyData[key].igst -= getNum(sr.igst)
+      monthlyData[key].total -= getNum(sr.grandTotal)
+    })
+
     const gstReport = Object.values(monthlyData).sort((a, b) => {
       const [yearA, monthA] = a.month.split(' ').reverse()
       const [yearB, monthB] = b.month.split(' ').reverse()
@@ -526,12 +619,12 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
         _sum: { amount: true }
       })
       
-      const totalSales = totalSalesAgg._sum.grandTotal || 0
-      const totalSalesReturns = totalSalesReturnsAgg._sum.grandTotal || 0
+      const totalSales = getNum(totalSalesAgg._sum.grandTotal || 0)
+      const totalSalesReturns = getNum(totalSalesReturnsAgg._sum.grandTotal || 0)
       const totalRevenue = totalSales - totalSalesReturns
-      const totalPaymentsReceived = totalPaymentsInAgg._sum.amount || 0
-      const totalPurchaseReturns = totalPurchaseReturnsAgg._sum.grandTotal || 0
-      const totalPaymentsOut = totalPaymentsOutAgg._sum.amount || 0
+      const totalPaymentsReceived = getNum(totalPaymentsInAgg._sum.amount || 0)
+      const totalPurchaseReturns = getNum(totalPurchaseReturnsAgg._sum.grandTotal || 0)
+      const totalPaymentsOut = getNum(totalPaymentsOutAgg._sum.amount || 0)
       
       const invoiceCount = await prisma.invoice.count({
         where: { distributorId: dist.id, csaId: null, date: whereDateRange }
@@ -646,12 +739,12 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
       where: { distributorId: id, status: 'PENDING', createdAt: whereDateRange }
     })
     
-    const totalSales = totalSalesAgg._sum.grandTotal || 0
-    const totalSalesReturns = totalSalesReturnsAgg._sum.grandTotal || 0
+    const totalSales = getNum(totalSalesAgg._sum.grandTotal || 0)
+    const totalSalesReturns = getNum(totalSalesReturnsAgg._sum.grandTotal || 0)
     const totalRevenue = totalSales - totalSalesReturns
-    const totalPaymentsReceived = totalPaymentsInAgg._sum.amount || 0
-    const totalPurchaseReturns = totalPurchaseReturnsAgg._sum.grandTotal || 0
-    const totalPaymentsOut = totalPaymentsOutAgg._sum.amount || 0
+    const totalPaymentsReceived = getNum(totalPaymentsInAgg._sum.amount || 0)
+    const totalPurchaseReturns = getNum(totalPurchaseReturnsAgg._sum.grandTotal || 0)
+    const totalPaymentsOut = getNum(totalPaymentsOutAgg._sum.amount || 0)
     
     const invoiceCount = await prisma.invoice.count({
       where: { distributorId: id, csaId: null, date: whereDateRange }
@@ -660,12 +753,7 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
       where: { distributorId: id }
     })
     const productCount = await prisma.product.count({
-      where: {
-        OR: [
-          { distributorId: id },
-          { csaId: csaId }
-        ]
-      }
+      where: { distributorId: id }
     })
     const claimCount = await prisma.claim.count({
       where: { distributorId: id, createdAt: whereDateRange }
@@ -705,12 +793,7 @@ router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) 
     }).sort((a, b) => b.totalBilling - a.totalBilling)
 
     const products = await prisma.product.findMany({
-      where: {
-        OR: [
-          { distributorId: id },
-          { csaId: csaId }
-        ]
-      },
+      where: { distributorId: id },
       include: {
         invoiceItems: {
           where: { invoice: { distributorId: id, csaId: null, date: whereDateRange } },
@@ -2417,7 +2500,6 @@ router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req,
       }
     })
 
-    // Also get CSA-created sales returns for each distributor
     const distributorsWithStats = await Promise.all(distributors.map(async distributor => {
       const distributorInvoices = distributor.invoices
       const distributorSalesReturns = await prisma.salesReturn.findMany({
@@ -2426,16 +2508,8 @@ router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req,
           date: dateFilter
         }
       })
-      const csaSalesReturns = await prisma.salesReturn.findMany({
-        where: {
-          csaId: csaId,
-          distributorId: distributor.id,
-          date: dateFilter
-        }
-      })
-      const allSalesReturns = [...distributorSalesReturns, ...csaSalesReturns]
 
-      const totalBilling = distributorInvoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0) - allSalesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0)
+      const totalBilling = distributorInvoices.reduce((sum, inv) => sum + getNum(inv.grandTotal), 0) - distributorSalesReturns.reduce((sum, sr) => sum + getNum(sr.grandTotal), 0)
       
       return {
         partyId: distributor.id,
@@ -2530,9 +2604,8 @@ router.get('/my-reports/product-sales', authenticateToken, requireCSA, async (re
       const existing = productMap.get(key)
       existing.totalQtySold += item.qty
       existing.totalRevenue += getNum(item.total)
-      if (item.product?.costPrice) {
-        existing.totalCost += item.qty * getNum(item.product.costPrice)
-      }
+      const cost = getNum(item.costPrice || item.product?.costPrice)
+      existing.totalCost += item.qty * cost
     })
 
     // Subtract sales return items
@@ -2551,9 +2624,8 @@ router.get('/my-reports/product-sales', authenticateToken, requireCSA, async (re
       const existing = productMap.get(key)
       existing.totalQtySold -= item.qty
       existing.totalRevenue -= getNum(item.total)
-      if (item.product?.costPrice) {
-        existing.totalCost -= item.qty * getNum(item.product.costPrice)
-      }
+      const cost = getNum(item.costPrice || item.product?.costPrice)
+      existing.totalCost -= item.qty * cost
     })
 
     const productSales = Array.from(productMap.values()).map(ps => ({
@@ -2587,59 +2659,59 @@ router.get('/my-reports/inventory', authenticateToken, requireCSA, async (req, r
       dateFilter.lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
     }
 
-    const distributors = await prisma.distributor.findMany({
-      where: { csaId },
+    const start = dateFilter.gte || new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() - 30)
+    const end = dateFilter.lte || new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 23, 59, 59, 999)
+
+    const products = await prisma.product.findMany({
+      where: {
+        OR: [
+          { distributor: { csaId: csaId } },
+          { csaId: csaId, distributorId: null }
+        ]
+      },
       include: {
-        products: {
-          include: {
-            invoiceItems: { where: { invoice: { date: dateFilter } } },
-            purchaseItems: { where: { purchase: { date: dateFilter } } },
-            salesReturnItems: { where: { salesReturn: { date: dateFilter } } }
-          }
-        }
+        invoiceItems: { include: { invoice: true } },
+        purchaseItems: { include: { purchase: true } },
+        salesReturnItems: { include: { salesReturn: true } },
+        purchaseReturnItems: { include: { purchaseReturn: true } }
       }
     })
 
     const inventoryData = []
     let totalValue = 0
 
-    distributors.forEach(distributor => {
-      distributor.products.forEach(product => {
-        const totalPurchases = product.purchaseItems.reduce((sum, pi) => sum + pi.qty, 0)
-        const totalSales = product.invoiceItems.reduce((sum, ii) => sum + ii.qty, 0) - product.salesReturnItems.reduce((sum, sri) => sum + sri.qty, 0)
-        const openingStock = product.currentStock - totalPurchases + totalSales
-        const closingStock = product.currentStock
-        const value = closingStock * getNum(product.costPrice)
+    products.forEach(product => {
+      const purchasesAfterEnd = product.purchaseItems.filter(pi => new Date(pi.purchase.date) > end).reduce((sum, pi) => sum + pi.qty, 0)
+      const salesAfterEnd = product.invoiceItems.filter(ii => new Date(ii.invoice.date) > end).reduce((sum, ii) => sum + ii.qty, 0)
+      const salesReturnsAfterEnd = product.salesReturnItems.filter(sr => new Date(sr.salesReturn.date) > end).reduce((sum, sr) => sum + sr.qty, 0)
+      const purchaseReturnsAfterEnd = product.purchaseReturnItems.filter(pr => new Date(pr.purchaseReturn.date) > end).reduce((sum, pr) => sum + pr.qty, 0)
 
-        inventoryData.push({
-          productId: product.id,
-          productName: product.name,
-          sku: product.sku,
-          openingStock,
-          purchases: totalPurchases,
-          sales: totalSales,
-          closingStock,
-          value
-        })
-        totalValue += value
-      })
-    })
+      const closingStock = product.currentStock - purchasesAfterEnd + salesAfterEnd - salesReturnsAfterEnd + purchaseReturnsAfterEnd
 
-    // Also include products that have csaId but no distributorId
-    const csaOnlyProducts = await prisma.product.findMany({
-      where: { csaId, distributorId: null },
-      include: {
-        invoiceItems: { where: { invoice: { date: dateFilter } } },
-        purchaseItems: { where: { purchase: { date: dateFilter } } },
-        salesReturnItems: { where: { salesReturn: { date: dateFilter } } }
-      }
-    })
+      const purchasesInPeriod = product.purchaseItems.filter(pi => {
+        const d = new Date(pi.purchase.date)
+        return d >= start && d <= end
+      }).reduce((sum, pi) => sum + pi.qty, 0)
 
-    csaOnlyProducts.forEach(product => {
-      const totalPurchases = product.purchaseItems.reduce((sum, pi) => sum + pi.qty, 0)
-      const totalSales = product.invoiceItems.reduce((sum, ii) => sum + ii.qty, 0) - product.salesReturnItems.reduce((sum, sri) => sum + sri.qty, 0)
-      const openingStock = product.currentStock - totalPurchases + totalSales
-      const closingStock = product.currentStock
+      const salesInPeriod = product.invoiceItems.filter(ii => {
+        const d = new Date(ii.invoice.date)
+        return d >= start && d <= end
+      }).reduce((sum, ii) => sum + ii.qty, 0)
+
+      const salesReturnsInPeriod = product.salesReturnItems.filter(sr => {
+        const d = new Date(sr.salesReturn.date)
+        return d >= start && d <= end
+      }).reduce((sum, sr) => sum + sr.qty, 0)
+
+      const purchaseReturnsInPeriod = product.purchaseReturnItems.filter(pr => {
+        const d = new Date(pr.purchaseReturn.date)
+        return d >= start && d <= end
+      }).reduce((sum, pr) => sum + pr.qty, 0)
+
+      const netPurchases = purchasesInPeriod - purchaseReturnsInPeriod
+      const netSales = salesInPeriod - salesReturnsInPeriod
+
+      const openingStock = closingStock - netPurchases + netSales
       const value = closingStock * getNum(product.costPrice)
 
       inventoryData.push({
@@ -2647,8 +2719,8 @@ router.get('/my-reports/inventory', authenticateToken, requireCSA, async (req, r
         productName: product.name,
         sku: product.sku,
         openingStock,
-        purchases: totalPurchases,
-        sales: totalSales,
+        purchases: purchasesInPeriod,
+        sales: salesInPeriod,
         closingStock,
         value
       })
@@ -2722,47 +2794,53 @@ router.get('/my-reports/party-product-sales/:partyId', authenticateToken, requir
       orderBy: { salesReturn: { date: 'desc' } }
     })
 
-    const productSales = []
-    invoiceItems.forEach(item => {
-      const existing = productSales.find(ps => ps.productId === item.productId)
-      if (existing) {
-        existing.totalQty += item.qty
-        existing.orders.push({
-          date: item.invoice.date,
-          invoiceNo: item.invoice.invoiceNo,
-          qty: item.qty,
-          rate: item.rate
-        })
-      } else {
-        productSales.push({
-          productId: item.productId,
-          productName: item.product?.name || 'Unknown',
-          sku: item.product?.sku || '',
-          totalQty: item.qty,
-          orders: [{
-            date: item.invoice.date,
-            invoiceNo: item.invoice.invoiceNo,
-            qty: item.qty,
-            rate: item.rate
-          }]
-        })
-      }
-    })
+    const productSalesMap = new Map()
 
-    // Subtract sales returns
-    salesReturnItems.forEach(item => {
-      const existing = productSales.find(ps => ps.productId === item.productId)
-      if (existing) {
-        existing.totalQty -= item.qty
-      } else {
-        productSales.push({
+    invoiceItems.forEach(item => {
+      if (!productSalesMap.has(item.productId)) {
+        productSalesMap.set(item.productId, {
           productId: item.productId,
           productName: item.product?.name || 'Unknown',
           sku: item.product?.sku || '',
-          totalQty: -item.qty,
+          totalQty: 0,
           orders: []
         })
       }
+      const existing = productSalesMap.get(item.productId)
+      existing.totalQty += item.qty
+      existing.orders.push({
+        date: item.invoice.date,
+        invoiceNo: item.invoice.invoiceNo,
+        qty: item.qty,
+        rate: item.rate,
+        type: 'Invoice'
+      })
+    })
+
+    salesReturnItems.forEach(item => {
+      if (!productSalesMap.has(item.productId)) {
+        productSalesMap.set(item.productId, {
+          productId: item.productId,
+          productName: item.product?.name || 'Unknown',
+          sku: item.product?.sku || '',
+          totalQty: 0,
+          orders: []
+        })
+      }
+      const existing = productSalesMap.get(item.productId)
+      existing.totalQty -= item.qty
+      existing.orders.push({
+        date: item.salesReturn.date,
+        invoiceNo: item.salesReturn.returnNo || 'Return',
+        qty: -item.qty,
+        rate: item.rate,
+        type: 'Sales Return'
+      })
+    })
+
+    const productSales = Array.from(productSalesMap.values()).map(ps => {
+      ps.orders.sort((a, b) => new Date(b.date) - new Date(a.date))
+      return ps
     })
 
     res.json(convertDecimals(productSales))
