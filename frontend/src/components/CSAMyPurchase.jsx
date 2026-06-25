@@ -376,6 +376,7 @@ function CSAMyPurchase() {
             accept=".xlsx,.xls,.csv,.pdf"
             className="hidden"
             onChange={handleFileChange}
+            onClick={(e) => { e.target.value = null }}
           />
           {file ? (
             <div>

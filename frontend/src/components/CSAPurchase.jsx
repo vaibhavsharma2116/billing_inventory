@@ -329,6 +329,7 @@ function CSAPurchase() {
                 accept=".xlsx,.xls,.csv"
                 className="hidden"
                 onChange={handleFileChange}
+                onClick={(e) => { e.target.value = null }}
               />
               {file ? (
                 <div>

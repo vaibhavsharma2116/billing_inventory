@@ -4386,16 +4386,25 @@ router.delete('/my-purchases/:id', authenticateToken, requireCSA, async (req, re
       for (const item of existingPurchase.purchaseItems) {
         const product = await tx.product.findUnique({ where: { id: item.productId } })
         if (product) {
-          const newStock = product.currentStock - item.qty
-          if (newStock <= 0) {
+          const newStock = Math.max(0, product.currentStock - item.qty)
+          
+          const otherPurchasesCount = await tx.purchaseItem.count({
+            where: { productId: item.productId, purchaseId: { not: id } }
+          })
+          
+          const salesCount = await tx.invoiceItem.count({
+            where: { productId: item.productId }
+          })
+
+          if (otherPurchasesCount === 0 && salesCount === 0) {
             await tx.product.delete({ where: { id: item.productId } })
-            console.log(`Deleted product ${product.id} (${product.name}) because stock went to ${newStock}`)
+            console.log(`Deleted product ${product.id} (${product.name}) because it has no other purchases or sales`)
           } else {
             await tx.product.update({
               where: { id: item.productId },
               data: { currentStock: newStock }
             })
-            console.log(`Updated product ${product.id} (${product.name}): stock ${product.currentStock} → ${newStock}`)
+            console.log(`Updated product ${product.id} (${product.name}): stock ${product.currentStock} -> ${newStock}`)
           }
         }
       }
@@ -5336,12 +5345,12 @@ router.get('/my-dashboard', authenticateToken, requireCSA, async (req, res) => {
       prisma.invoice.count({ where: { csaId, date: whereDateRange } })
     ])
 
-    const totalSales = totalSalesAgg._sum.grandTotal || 0
-    const totalSalesReturns = totalSalesReturnsAgg._sum.grandTotal || 0
+    const totalSales = getNum(totalSalesAgg._sum.grandTotal || 0)
+    const totalSalesReturns = getNum(totalSalesReturnsAgg._sum.grandTotal || 0)
     const totalRevenue = totalSales - totalSalesReturns
-    const totalPaymentsReceived = totalPaymentsInAgg._sum.amount || 0
-    const totalPurchaseReturns = totalPurchaseReturnsAgg._sum.grandTotal || 0
-    const totalPaymentsOut = totalPaymentsOutAgg._sum.amount || 0
+    const totalPaymentsReceived = getNum(totalPaymentsInAgg._sum.amount || 0)
+    const totalPurchaseReturns = getNum(totalPurchaseReturnsAgg._sum.grandTotal || 0)
+    const totalPaymentsOut = getNum(totalPaymentsOutAgg._sum.amount || 0)
 
     res.json(convertDecimals({
       totalSales,

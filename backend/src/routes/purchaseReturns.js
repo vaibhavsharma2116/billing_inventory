@@ -36,7 +36,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const distributorId = req.user.distributorId
     const purchaseReturns = await prisma.purchaseReturn.findMany({
-      where: { distributorId },
+      where: { distributorId, csaId: null },
       include: {
         purchaseReturnItems: { include: { product: true } }
       },

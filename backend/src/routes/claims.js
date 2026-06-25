@@ -36,14 +36,14 @@ router.get('/extra-margin', authenticateToken, requireDistributor, async (req, r
     const invoiceItems = await prisma.invoiceItem.findMany({
       where: { 
         extraMarginPercentage: { gt: 0 },
-        invoice: { distributorId: req.user.distributorId, date: { gte: start, lte: end } }
+        invoice: { distributorId: req.user.distributorId, csaId: null, date: { gte: start, lte: end } }
       },
       include: { product: true, invoice: true }
     })
 
     const salesReturnItems = await prisma.salesReturnItem.findMany({
       where: {
-        salesReturn: { distributorId: req.user.distributorId, date: { gte: start, lte: end } }
+        salesReturn: { distributorId: req.user.distributorId, csaId: null, date: { gte: start, lte: end } }
       },
       include: { product: true, salesReturn: true }
     })
