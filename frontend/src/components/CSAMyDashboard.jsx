@@ -46,6 +46,12 @@ function CSAMyDashboard() {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('Admin User')
+  
+  const [activeTab, setActiveTab] = useState('invoices')
+  const [invoices, setInvoices] = useState([])
+  const [purchaseReturns, setPurchaseReturns] = useState([])
+  const [paymentsOut, setPaymentsOut] = useState([])
+  const [claims, setClaims] = useState([])
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user')
@@ -54,6 +60,7 @@ function CSAMyDashboard() {
       setUserName(user.name || 'Admin User')
     }
     fetchStats()
+    fetchRecentData()
   }, [])
 
   const fetchStats = async () => {
@@ -67,6 +74,61 @@ function CSAMyDashboard() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchRecentData = async () => {
+    try {
+      const headers = getAuthHeaders()
+      const [invRes, prRes, poRes, claimRes] = await Promise.all([
+        fetch(`${API_URL}/csa/my-invoices`, { headers }),
+        fetch(`${API_URL}/csa/my-purchase-returns`, { headers }),
+        fetch(`${API_URL}/csa/my-payments-out`, { headers }),
+        fetch(`${API_URL}/csa/claims`, { headers })
+      ])
+      
+      if (invRes.ok) setInvoices(await invRes.json())
+      if (prRes.ok) setPurchaseReturns(await prRes.json())
+      if (poRes.ok) setPaymentsOut(await poRes.json())
+      if (claimRes.ok) setClaims(await claimRes.json())
+    } catch (error) {
+      console.error('Failed to fetch recent data:', error)
+    }
+  }
+
+  const getGrandTotal = (inv) => {
+    try {
+      if (typeof inv?.grandTotal === 'number') return inv.grandTotal
+      if (inv?.grandTotal?.toNumber) return inv.grandTotal.toNumber()
+      if (typeof inv?.grandTotal === 'string' && !isNaN(parseFloat(inv.grandTotal))) return parseFloat(inv.grandTotal)
+      return 0
+    } catch { return 0 }
+  }
+
+  const getClaimAmount = (claim) => {
+    try {
+      if (typeof claim?.amount === 'number') return claim.amount
+      if (claim?.amount?.toNumber) return claim.amount.toNumber()
+      if (typeof claim?.amount === 'string' && !isNaN(parseFloat(claim.amount))) return parseFloat(claim.amount)
+      return 0
+    } catch { return 0 }
+  }
+
+  const getPaymentAmount = (payment) => {
+    try {
+      if (typeof payment?.amount === 'number') return payment.amount
+      if (payment?.amount?.toNumber) return payment.amount.toNumber()
+      if (typeof payment?.amount === 'string' && !isNaN(parseFloat(payment.amount))) return parseFloat(payment.amount)
+      return 0
+    } catch { return 0 }
+  }
+  
+  const getPurchaseReturnTotal = (pr) => {
+    try {
+      if (typeof pr?.grandTotal === 'number') return pr.grandTotal
+      if (pr?.grandTotal?.toNumber) return pr.grandTotal.toNumber()
+      if (typeof pr?.grandTotal === 'string' && !isNaN(parseFloat(pr.grandTotal))) return parseFloat(pr.grandTotal)
+      return 0
+    } catch { return 0 }
   }
 
   if (loading) {
@@ -261,6 +323,156 @@ function CSAMyDashboard() {
               />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="bg-white rounded-2xl md:rounded-3xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="border-b border-gray-100 overflow-x-auto">
+          <div className="flex min-w-max">
+            <button
+              onClick={() => setActiveTab('invoices')}
+              className={`px-4 md:px-6 py-3 md:py-4 font-medium text-sm md:text-base whitespace-nowrap transition-all ${
+                activeTab === 'invoices' 
+                  ? 'bg-pink-50 text-pink-700 border-b-2 border-pink-600' 
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              Recent Invoices
+            </button>
+            <button
+              onClick={() => setActiveTab('purchaseReturns')}
+              className={`px-4 md:px-6 py-3 md:py-4 font-medium text-sm md:text-base whitespace-nowrap transition-all ${
+                activeTab === 'purchaseReturns' 
+                  ? 'bg-cyan-50 text-cyan-700 border-b-2 border-cyan-600' 
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              Recent Purchase Returns
+            </button>
+            <button
+              onClick={() => setActiveTab('paymentsOut')}
+              className={`px-4 md:px-6 py-3 md:py-4 font-medium text-sm md:text-base whitespace-nowrap transition-all ${
+                activeTab === 'paymentsOut' 
+                  ? 'bg-rose-50 text-rose-700 border-b-2 border-rose-600' 
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              Recent Payments Out
+            </button>
+            <button
+              onClick={() => setActiveTab('claims')}
+              className={`px-4 md:px-6 py-3 md:py-4 font-medium text-sm md:text-base whitespace-nowrap transition-all ${
+                activeTab === 'claims' 
+                  ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-600' 
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              Recent Claims
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-4 md:p-8">
+          {/* Invoices Tab */}
+          {activeTab === 'invoices' && (
+            !Array.isArray(invoices) || invoices.length === 0 ? (
+              <div className="text-center py-8 md:py-12 text-gray-500">No invoices yet</div>
+            ) : (
+              <div className="space-y-3 md:space-y-4">
+                {invoices.slice(0, 5).map((inv, i) => (
+                  <div key={inv?.id || i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl md:rounded-2xl hover:bg-pink-50 transition-colors gap-2">
+                    <div>
+                      <div className="font-semibold text-gray-900">{inv?.invoiceNo || '-'}</div>
+                      <div className="text-sm text-gray-600">{inv?.party?.name || 'Unknown Party'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-pink-600">₹{getGrandTotal(inv).toFixed(2)}</div>
+                      <div className="text-xs text-gray-500">
+                        {inv?.date ? new Date(inv.date).toLocaleDateString() : '-'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Purchase Returns Tab */}
+          {activeTab === 'purchaseReturns' && (
+            !Array.isArray(purchaseReturns) || purchaseReturns.length === 0 ? (
+              <div className="text-center py-8 md:py-12 text-gray-500">No purchase returns yet</div>
+            ) : (
+              <div className="space-y-3 md:space-y-4">
+                {purchaseReturns.slice(0, 5).map((pr, i) => (
+                  <div key={pr?.id || i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl md:rounded-2xl hover:bg-cyan-50 transition-colors gap-2">
+                    <div>
+                      <div className="font-semibold text-gray-900">{pr?.returnNo || '-'}</div>
+                      <div className="text-sm text-gray-600">{pr?.supplierName || 'Unknown Supplier'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-cyan-600">₹{getPurchaseReturnTotal(pr).toFixed(2)}</div>
+                      <div className="text-xs text-gray-500">
+                        {pr?.createdAt ? new Date(pr.createdAt).toLocaleDateString() : '-'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Payments Out Tab */}
+          {activeTab === 'paymentsOut' && (
+            !Array.isArray(paymentsOut) || paymentsOut.length === 0 ? (
+              <div className="text-center py-8 md:py-12 text-gray-500">No payments out yet</div>
+            ) : (
+              <div className="space-y-3 md:space-y-4">
+                {paymentsOut.slice(0, 5).map((p, i) => (
+                  <div key={p?.id || i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl md:rounded-2xl hover:bg-rose-50 transition-colors gap-2">
+                    <div>
+                      <div className="font-semibold text-gray-900">{p?.paymentNo || '-'}</div>
+                      <div className="text-sm text-gray-600">{p?.supplierName || 'Unknown Supplier'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-rose-600">₹{getPaymentAmount(p).toFixed(2)}</div>
+                      <div className="text-xs text-gray-500">
+                        {p?.createdAt ? new Date(p.createdAt).toLocaleDateString() : '-'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Claims Tab */}
+          {activeTab === 'claims' && (
+            !Array.isArray(claims) || claims.length === 0 ? (
+              <div className="text-center py-8 md:py-12 text-gray-500">No claims yet</div>
+            ) : (
+              <div className="space-y-3 md:space-y-4">
+                {claims.slice(0, 5).map((claim, i) => (
+                  <div key={claim?.id || i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl md:rounded-2xl hover:bg-purple-50 transition-colors gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900">{claim?.brandName || '-'}</div>
+                      <div className="text-sm text-gray-600 truncate">{claim?.claimDetails || '-'}</div>
+                    </div>
+                    <div className="text-right flex flex-col items-end gap-2">
+                      <div className="font-bold text-purple-600">₹{getClaimAmount(claim).toFixed(2)}</div>
+                      <span className={`text-xs px-3 py-1 rounded-full font-semibold ${
+                        claim?.status === 'PAID' ? 'bg-green-100 text-green-800' :
+                        claim?.status === 'APPROVED' ? 'bg-blue-100 text-blue-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {claim?.status || 'PENDING'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
         </div>
       </div>
     </div>

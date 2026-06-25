@@ -939,7 +939,7 @@ router.get('/invoices/my', authenticateToken, requireCSA, async (req, res) => {
         invoiceItems: { include: { product: true } },
         distributor: { select: { id: true, companyName: true } }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
 
     res.json(convertDecimals(invoices))
@@ -3112,7 +3112,7 @@ router.get('/my-purchases', authenticateToken, requireCSA, async (req, res) => {
           orderBy: { id: 'asc' }
         }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(purchases))
   } catch (error) {
@@ -4727,7 +4727,7 @@ router.get('/my-invoices', authenticateToken, requireCSA, async (req, res) => {
         distributor: true, 
         invoiceItems: { include: { product: true } }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(invoices))
   } catch (error) {
@@ -4975,7 +4975,7 @@ router.get('/my-sales-returns', authenticateToken, requireCSA, async (req, res) 
         party: true,
         distributor: true
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(salesReturns))
   } catch (error) {
@@ -5072,7 +5072,7 @@ router.get('/my-payments-in', authenticateToken, requireCSA, async (req, res) =>
     const paymentsIn = await prisma.paymentIn.findMany({
       where: { csaId },
       include: { party: true, distributor: true },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(paymentsIn))
   } catch (error) {
@@ -5127,7 +5127,7 @@ router.get('/my-purchase-returns', authenticateToken, requireCSA, async (req, re
       include: {
         purchaseReturnItems: { include: { product: true } }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(purchaseReturns))
   } catch (error) {
@@ -5237,7 +5237,7 @@ router.get('/my-payments-out', authenticateToken, requireCSA, async (req, res) =
     const csaId = req.user.userId
     const paymentsOut = await prisma.paymentOut.findMany({
       where: { csaId },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: 'desc' }
     })
     res.json(convertDecimals(paymentsOut))
   } catch (error) {

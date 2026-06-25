@@ -135,17 +135,22 @@ export default function AdminDashboard({ view = 'dashboard' }) {
 
   // Calculate aggregate stats
   const totalParties = distributors.reduce((sum, d) => sum + getNum(d.partyCount), 0)
-  const totalProducts = distributors.reduce((sum, d) => {
-    console.log('d.productCount for', d.companyName, d.productCount)
-    return sum + getNum(d.productCount)
-  }, 0)
-  console.log('Total products calculated:', totalProducts)
-  const totalSales = distributors.reduce((sum, d) => sum + getNum(d.totalSales), 0)
-  const totalSalesReturns = distributors.reduce((sum, d) => sum + getNum(d.totalSalesReturns), 0)
+  const totalProducts = distributors.reduce((sum, d) => sum + getNum(d.productCount), 0)
+  
+  const distSales = distributors.reduce((sum, d) => sum + getNum(d.totalSales), 0)
+  const csaSales = csaPerformance.reduce((sum, c) => sum + getNum(c.totalSales), 0)
+  const totalSales = distSales + csaSales
+  
+  const distSalesReturns = distributors.reduce((sum, d) => sum + getNum(d.totalSalesReturns), 0)
+  const csaSalesReturns = csaPerformance.reduce((sum, c) => sum + getNum(c.totalSalesReturns), 0)
+  const totalSalesReturns = distSalesReturns + csaSalesReturns
+  
   const totalRevenue = totalSales - totalSalesReturns
-  const totalPaymentsReceived = distributors.reduce((sum, d) => sum + getNum(d.totalPaymentsReceived), 0)
-  const totalPurchaseReturns = distributors.reduce((sum, d) => sum + getNum(d.totalPurchaseReturns), 0)
-  const totalPaymentsOut = distributors.reduce((sum, d) => sum + getNum(d.totalPaymentsOut), 0)
+  
+  const distPayments = distributors.reduce((sum, d) => sum + getNum(d.totalPaymentsReceived), 0)
+  const csaPayments = csaPerformance.reduce((sum, c) => sum + getNum(c.totalPaymentsReceived), 0)
+  const totalPaymentsReceived = distPayments + csaPayments
+  
   const pendingPayments = Math.max(0, totalRevenue - totalPaymentsReceived)
   const activeDistributors = distributors.filter(d => d.isActive !== false).length
 
@@ -347,8 +352,22 @@ export default function AdminDashboard({ view = 'dashboard' }) {
 
         {currentView === 'dashboard' && (
           <>
+            {/* Welcome Card */}
+            <div className="mb-6 md:mb-8 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl md:rounded-3xl p-6 md:p-8 text-white shadow-2xl">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
+                <div>
+                  <p className="text-blue-100 text-sm md:text-lg mb-1 md:mb-2">Admin Dashboard</p>
+                  <h2 className="text-2xl md:text-4xl font-bold">System Performance Overview</h2>
+                </div>
+                <div className="flex items-center gap-2 bg-white/20 px-4 md:px-6 py-2 md:py-3 rounded-full backdrop-blur-sm">
+                  <span className="text-sm font-semibold">ALL NETWORKS</span>
+                </div>
+              </div>
+            </div>
+
             {/* Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-6">
+            <h3 className="text-lg md:text-xl font-semibold text-gray-700 mb-4">Network Stats</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-8">
               {/* Total CSAs */}
               <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
                 <div className="flex flex-col items-center text-center">
@@ -371,6 +390,7 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                 </div>
               </div>
 
+              {/* Products */}
               <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
                 <div className="flex flex-col items-center text-center">
                   <div className="w-10 h-10 md:w-16 md:h-16 bg-orange-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
@@ -381,6 +401,7 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                 </div>
               </div>
 
+              {/* Total Revenue */}
               <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
                 <div className="flex flex-col items-center text-center">
                   <div className="w-10 h-10 md:w-16 md:h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
@@ -390,7 +411,11 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                   <p className="text-xl md:text-3xl font-bold text-yellow-700 mt-2">₹{loading ? '...' : totalRevenue.toLocaleString()}</p>
                 </div>
               </div>
+            </div>
 
+            <h3 className="text-lg md:text-xl font-semibold text-gray-700 mb-4">Financial Overview</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6 mb-8">
+              {/* Sales Returns */}
               <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
                 <div className="flex flex-col items-center text-center">
                   <div className="w-10 h-10 md:w-16 md:h-16 bg-red-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
@@ -401,6 +426,7 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                 </div>
               </div>
 
+              {/* Payments Received */}
               <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
                 <div className="flex flex-col items-center text-center">
                   <div className="w-10 h-10 md:w-16 md:h-16 bg-green-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
@@ -411,6 +437,7 @@ export default function AdminDashboard({ view = 'dashboard' }) {
                 </div>
               </div>
 
+              {/* Pending Payments */}
               <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
                 <div className="flex flex-col items-center text-center">
                   <div className="w-10 h-10 md:w-16 md:h-16 bg-orange-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
