@@ -38,7 +38,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const purchaseReturns = await prisma.purchaseReturn.findMany({
       where: { distributorId, csaId: null },
       include: {
-        purchaseReturnItems: { include: { product: true } }
+        purchaseReturnItems: { include: { product: true } },
+        distributor: { include: { csa: true } }
       },
       orderBy: { createdAt: 'asc' }
     })
@@ -81,8 +82,9 @@ router.post('/create', authenticateToken, async (req, res) => {
       const costPrice = getNum(item.costPrice)
       const qty = item.qty
       const gstPercentage = getNum(item.gstPercentage)
-      const taxable = qty * costPrice
-      const gstAmount = (taxable * gstPercentage) / 100
+      const total = qty * costPrice
+      const taxable = total / (1 + (gstPercentage / 100))
+      const gstAmount = total - taxable
       let cgst = 0, sgst = 0, igst = 0
 
       if (isInterState) {
@@ -91,8 +93,6 @@ router.post('/create', authenticateToken, async (req, res) => {
         cgst = gstAmount / 2
         sgst = gstAmount / 2
       }
-
-      const total = taxable + cgst + sgst + igst
       
       totalTaxable += taxable
       totalCGST += cgst

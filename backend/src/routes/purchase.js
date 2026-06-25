@@ -1204,7 +1204,8 @@ router.get('/', authenticateToken, requireDistributor, async (req, res) => {
         purchaseItems: {
           include: { product: true },
           orderBy: { id: 'asc' }
-        }
+        },
+        distributor: { include: { csa: true } }
       },
       orderBy: { createdAt: 'desc' }
     })

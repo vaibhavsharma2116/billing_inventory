@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Eye, X } from 'lucide-react'
+import { Eye, Download, X } from 'lucide-react'
+import { downloadReturnPDF } from '../utils/returnPdfGenerator'
 
 const API_URL = import.meta.env.VITE_API_URL
 const PURCHASE_API_URL = `${API_URL}/purchase`
@@ -280,13 +281,22 @@ function PurchaseReturns() {
                       <td className="px-4 py-3 text-gray-600">{pr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">₹{parseFloat(pr.grandTotal).toFixed(2)}</td>
                       <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => setViewReturn(pr)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                          title="View Return"
-                        >
-                          <Eye size={18} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setViewReturn(pr)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            title="View Return"
+                          >
+                            <Eye size={18} />
+                          </button>
+                          <button
+                            onClick={() => downloadReturnPDF(pr, 'Purchase Return')}
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition"
+                            title="Download PDF"
+                          >
+                            <Download size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

@@ -82,8 +82,9 @@ router.post('/create', authenticateToken, async (req, res) => {
       const rate = getNum(item.rate)
       const qty = item.qty
       const gstPercentage = getNum(item.gstPercentage)
-      const taxable = qty * rate
-      const gstAmount = (taxable * gstPercentage) / 100
+      const total = qty * rate
+      const taxable = total / (1 + (gstPercentage / 100))
+      const gstAmount = total - taxable
       let cgst = 0, sgst = 0, igst = 0
 
       if (isInterState) {
@@ -92,8 +93,6 @@ router.post('/create', authenticateToken, async (req, res) => {
         cgst = gstAmount / 2
         sgst = gstAmount / 2
       }
-
-      const total = taxable + cgst + sgst + igst
       
       totalTaxable += taxable
       totalCGST += cgst

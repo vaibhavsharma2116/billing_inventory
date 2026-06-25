@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { downloadInvoicePDF } from '../utils/invoicePdfGenerator'
 
 const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27' // Maharashtra as default
@@ -362,7 +363,22 @@ function Billing() {
       if (!res.ok) throw new Error(data.error)
       setSavedInvoice(data)
       if (shouldPrint) {
-        setTimeout(() => window.print(), 100)
+        const totals = getGrandTotals();
+        const invoiceForPDF = {
+          ...data,
+          party: isCSA ? null : selectedParty,
+          distributor: isCSA ? selectedDistributor : user,
+          invoiceItems: items,
+          taxableValue: totals.totalTaxable,
+          cgst: totals.totalCGST,
+          sgst: totals.totalSGST,
+          igst: 0,
+          grandTotal: totals.grandTotal
+        };
+        downloadInvoicePDF(invoiceForPDF, user, isCSA);
+        setTimeout(() => {
+          handleNewInvoice()
+        }, 1500)
       } else {
         // Auto reset form after successful save for new invoices, and navigate back for CSA
         if (!editInvoiceId) {

@@ -807,21 +807,15 @@ function Purchase() {
                               </td>
                               <td className="px-3 py-3.5 text-sm text-right text-gray-700 whitespace-nowrap">{formatCurrency(rate)}</td>
                               <td className="px-3 py-3.5 text-sm text-right whitespace-nowrap">
-                                {discountAmt > 0 ? (
-                                  <>
-                                    <div className="text-red-600 font-medium">{formatCurrency(discountAmt)}</div>
-                                    <div className="text-[10px] text-gray-500 mt-0.5">({discountPct}%)</div>
-                                  </>
+                                {discountPct > 0 ? (
+                                  <div className="text-red-600 font-medium">{discountPct}%</div>
                                 ) : (
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
                               <td className="px-3 py-3.5 text-sm text-right whitespace-nowrap">
-                                {taxAmt > 0 ? (
-                                  <>
-                                    <div className="text-gray-700 font-medium">{formatCurrency(taxAmt)}</div>
-                                    <div className="text-[10px] text-gray-500 mt-0.5">({gstPercentage}%)</div>
-                                  </>
+                                {gstPercentage > 0 ? (
+                                  <div className="text-gray-700 font-medium">{gstPercentage}%</div>
                                 ) : (
                                   <span className="text-gray-400">-</span>
                                 )}
@@ -848,24 +842,21 @@ function Purchase() {
 
                 viewPurchase.purchaseItems?.forEach(item => {
                   const qty = parseFloat(item.qty) || 0
-                  const rateWithGst = parseFloat(item.rate || item.costPrice) || 0
-                  const total = item.total != null ? parseFloat(item.total) : (rateWithGst * item.qty)
+                  const rate = parseFloat(item.rate || item.costPrice) || 0
+                  const discountPct = parseFloat(item.discount) || 0
                   const gstPercentage = parseFloat(item.gstPercentage) || 18
-                  const totalExcludingGst = total / (1 + (gstPercentage / 100))
-                  const taxAmt = total - totalExcludingGst
 
-                  totalTaxable += totalExcludingGst
-                  grandTotal += total
+                  const taxable = qty * rate
+                  const discountAmt = (taxable * discountPct) / 100
+                  const taxableAfterDiscount = taxable - discountAmt
+                  const taxAmt = (taxableAfterDiscount * gstPercentage) / 100
+                  const finalTotal = item.total != null ? parseFloat(item.total) : (taxableAfterDiscount + taxAmt)
 
-                  const gstIn = viewPurchase.supplier?.gstIn || viewPurchase.distributor?.gstIn || ''
-                  const isInterState = gstIn ? !String(gstIn).startsWith('27') : false
+                  totalTaxable += taxableAfterDiscount
+                  grandTotal += finalTotal
 
-                  if (isInterState) {
-                    totalIGST += taxAmt
-                  } else {
-                    totalCGST += taxAmt / 2
-                    totalSGST += taxAmt / 2
-                  }
+                  totalCGST += taxAmt / 2
+                  totalSGST += taxAmt / 2
                 })
 
                 return (
@@ -873,20 +864,22 @@ function Purchase() {
                     {/* Gold header band */}
                     <div className="flex justify-between items-start border-b-2 border-[#cda84f] pb-4 mb-4">
                       <div>
-                        <h1 className="text-3xl font-serif font-extrabold text-[#1a2e40] tracking-wide">POPPIK LIFESTYLE PVT LTD</h1>
+                        <h1 className="text-3xl font-serif font-extrabold text-[#1a2e40] tracking-wide uppercase">
+                          {viewPurchase.distributor?.csa?.companyName || viewPurchase.distributor?.csa?.name || viewPurchase.supplierName || 'POPPIK LIFESTYLE PVT LTD'}
+                        </h1>
                         <div className="text-[11px] font-semibold text-gray-700 mt-1">
-                          <span>PAN No: <strong className="text-gray-900">AAQCP0247B</strong></span>
+                          <span>PAN No: <strong className="text-gray-900">{viewPurchase.distributor?.csa?.pan || (viewPurchase.distributor?.csa?.gstin ? viewPurchase.distributor.csa.gstin.substring(2, 12) : 'AAQCP0247B')}</strong></span>
                           <span className="mx-3">|</span>
-                          <span>GSTIN: <strong className="text-gray-900">27AAQCP0247B1ZK</strong></span>
+                          <span>GSTIN: <strong className="text-gray-900">{viewPurchase.distributor?.csa?.gstin || '27AAQCP0247B1ZK'}</strong></span>
                         </div>
                         <div className="text-[11px] text-gray-600 mt-1 flex gap-4">
-                          <span>📞 8655324379</span>
-                          <span>✉ account@poppik.in</span>
+                          <span>📞 {viewPurchase.distributor?.csa?.phone || '8655324379'}</span>
+                          <span>✉ {viewPurchase.distributor?.csa?.email || 'account@poppik.in'}</span>
                         </div>
                         <p className="text-[11px] text-gray-500 mt-1 max-w-lg">
-                          213 Sky Lark sector 11 belapur Thane , Thane, Maharashtra, 400614
+                          {viewPurchase.distributor?.csa?.city ? `${viewPurchase.distributor.csa.city}, Maharashtra` : '213 Sky Lark sector 11 belapur Thane , Thane, Maharashtra, 400614'}
                         </p>
-                        <p className="text-[11px] text-blue-600 mt-0.5 font-medium">web: www.poppiklifestyle.com</p>
+                        <p className="text-[11px] text-blue-600 mt-0.5 font-medium">{viewPurchase.distributor?.csa ? '' : 'web: www.poppiklifestyle.com'}</p>
                       </div>
                       <div className="text-right">
                         <div className="border-2 border-gray-400 p-2 inline-block">
@@ -963,22 +956,19 @@ function Purchase() {
                       </thead>
                       <tbody>
                         {viewPurchase.purchaseItems?.map((item, idx) => {
+                          const qty = parseFloat(item.qty) || 0
+                          const rate = parseFloat(item.rate || item.costPrice) || 0
                           const mrp = parseFloat(item.mrp || item.product?.baseSellingPrice) || 0
-                          const rateWithGst = parseFloat(item.rate || item.costPrice) || 0
-                          const total = item.total != null ? parseFloat(item.total) : (rateWithGst * item.qty)
+                          const discountPct = parseFloat(item.discount) || 0
                           const gstPercentage = parseFloat(item.gstPercentage) || 18
-                          const qty = parseInt(item.qty) || 0
-
-                          const rateExcludingGst = rateWithGst / (1 + (gstPercentage / 100))
-                          const totalExcludingGst = total / (1 + (gstPercentage / 100))
                           
-                          const taxableBeforeMargin = rateExcludingGst * qty
-                          const itemDiscount = taxableBeforeMargin - totalExcludingGst
-                          const extraMarginPercentage = taxableBeforeMargin > 0 ? (itemDiscount / taxableBeforeMargin) * 100 : 0
-                          
-                          const taxAmt = total - totalExcludingGst
+                          const taxable = qty * rate
+                          const discountAmt = (taxable * discountPct) / 100
+                          const taxableAfterDiscount = taxable - discountAmt
+                          const taxAmt = (taxableAfterDiscount * gstPercentage) / 100
+                          const finalTotal = item.total != null ? parseFloat(item.total) : (taxableAfterDiscount + taxAmt)
 
-                          const discountPercentageFromMrp = mrp > 0 ? ((mrp - rateExcludingGst) / mrp) * 100 : 0
+                          const discountPercentageFromMrp = mrp > 0 && rate > 0 && mrp > rate ? ((mrp - rate) / mrp) * 100 : 0
 
                           return (
                             <tr key={idx} className="border-b border-gray-200">
@@ -992,28 +982,23 @@ function Purchase() {
                                   <div className="text-[9px] text-green-600 font-bold">({discountPercentageFromMrp.toFixed(2)}% OFF)</div>
                                 )}
                               </td>
-                              <td className="px-2 py-2 text-xs text-right text-gray-700">{formatCurrency(rateExcludingGst)}</td>
+                              <td className="px-2 py-2 text-xs text-right text-gray-700">{formatCurrency(rate)}</td>
                               <td className="px-2 py-2 text-xs text-right whitespace-nowrap">
-                                {itemDiscount > 0.01 ? (
-                                  <>
-                                    <div className="text-red-600 font-semibold">{formatCurrency(itemDiscount)}</div>
-                                    <div className="text-[9px] text-gray-500">({extraMarginPercentage.toFixed(0)}%)</div>
-                                  </>
+                                {discountPct > 0 ? (
+                                  <div className="text-red-600 font-semibold">{discountPct}%</div>
                                 ) : (
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
+
                               <td className="px-2 py-2 text-xs text-right whitespace-nowrap">
                                 {taxAmt > 0 ? (
-                                  <>
-                                    <div className="text-gray-700 font-semibold">{formatCurrency(taxAmt)}</div>
-                                    <div className="text-[9px] text-gray-500">({gstPercentage}%)</div>
-                                  </>
+                                  <div className="text-gray-700 font-semibold">{gstPercentage}%</div>
                                 ) : (
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
-                              <td className="px-2 py-2 text-xs text-right font-bold text-gray-900">{formatCurrency(total)}</td>
+                              <td className="px-2 py-2 text-xs text-right font-bold text-gray-900">{formatCurrency(finalTotal)}</td>
                             </tr>
                           )
                         })}

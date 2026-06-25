@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Eye, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -21,6 +22,8 @@ function PaymentsIn() {
   const [error, setError] = useState('')
   const [savedPayment, setSavedPayment] = useState(null)
   const [showList, setShowList] = useState(true)
+  const [viewPayment, setViewPayment] = useState(null)
+  const [showViewModal, setShowViewModal] = useState(false)
 
   useEffect(() => {
     fetchParties()
@@ -152,12 +155,14 @@ function PaymentsIn() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-12">S.No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment No</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mode</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-16">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -168,8 +173,9 @@ function PaymentsIn() {
                     </td>
                   </tr>
                 ) : (
-                  paymentsIn.map(payment => (
+                  paymentsIn.map((payment, idx) => (
                     <tr key={payment.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{idx + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-800">{payment.paymentNo}</td>
                       <td className="px-4 py-3 text-gray-700">{payment.party?.name || '-'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(payment.createdAt).toLocaleDateString()}</td>
@@ -185,6 +191,11 @@ function PaymentsIn() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">{payment.referenceNo || '-'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-green-600">₹{(parseFloat(payment.amount) || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setViewPayment(payment); setShowViewModal(true); }} className="text-blue-600 hover:text-blue-800" title="View Details">
+                          <Eye className="w-5 h-5" />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -303,6 +314,54 @@ function PaymentsIn() {
               >
                 {loading ? 'Saving...' : 'Save Payment'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Modal */}
+      {showViewModal && viewPayment && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-lg font-bold text-gray-800">Payment Details</h2>
+              <button onClick={() => setShowViewModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <div className="space-y-4">
+                <div className="flex justify-between pb-3 border-b border-gray-100">
+                  <span className="text-gray-500 font-medium text-sm">Payment No</span>
+                  <span className="font-semibold text-gray-900">{viewPayment.paymentNo}</span>
+                </div>
+                <div className="flex justify-between pb-3 border-b border-gray-100">
+                  <span className="text-gray-500 font-medium text-sm">Customer</span>
+                  <span className="font-semibold text-gray-900">{viewPayment.party?.name || '-'}</span>
+                </div>
+                <div className="flex justify-between pb-3 border-b border-gray-100">
+                  <span className="text-gray-500 font-medium text-sm">Date</span>
+                  <span className="font-semibold text-gray-900">{new Date(viewPayment.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between pb-3 border-b border-gray-100">
+                  <span className="text-gray-500 font-medium text-sm">Amount</span>
+                  <span className="font-semibold text-green-600">₹{(parseFloat(viewPayment.amount) || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between pb-3 border-b border-gray-100">
+                  <span className="text-gray-500 font-medium text-sm">Mode</span>
+                  <span className="font-semibold text-gray-900">{viewPayment.paymentMode}</span>
+                </div>
+                <div className="flex justify-between pb-3 border-b border-gray-100">
+                  <span className="text-gray-500 font-medium text-sm">Reference No</span>
+                  <span className="font-semibold text-gray-900">{viewPayment.referenceNo || '-'}</span>
+                </div>
+                {viewPayment.notes && (
+                  <div className="pt-2">
+                    <span className="text-gray-500 font-medium text-sm block mb-1">Notes</span>
+                    <p className="text-gray-800 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100">{viewPayment.notes}</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

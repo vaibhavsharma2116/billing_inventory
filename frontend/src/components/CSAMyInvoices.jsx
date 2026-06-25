@@ -57,7 +57,7 @@ function CSAMyInvoices() {
       const targetInvoice = invoices.find(inv => inv.id === location.state.printInvoiceId)
       if (targetInvoice) {
         setViewInvoice(targetInvoice)
-        setTimeout(() => window.print(), 500)
+        setTimeout(() => handlePrint(targetInvoice), 500)
         // Clear state to prevent looping on reload
         window.history.replaceState({}, document.title)
       }
@@ -183,21 +183,45 @@ function CSAMyInvoices() {
     }
   }
 
-  const handlePrint = () => {
-    if (!viewInvoice) return;
+  const handlePrint = (invoiceToPrint = viewInvoice) => {
+    if (invoiceToPrint && invoiceToPrint.nativeEvent) {
+      invoiceToPrint = viewInvoice;
+    }
+    if (!invoiceToPrint) return;
 
     const doc = new jsPDF('p', 'pt', 'a4');
+
+    // Header Details Logic
+    const isSuperadmin = currentUser?.role === 'SUPERADMIN' || currentUser?.role === 'ADMIN';
+
+    const poppikDetails = {
+      name: 'POPPIK LIFESTYLE PVT LTD',
+      pan: 'AAQCP0247B',
+      gstin: '27AAQCP0247B1ZK',
+      phone: '8655324379',
+      email: 'account@poppik.in',
+      address: '213 Sky Lark sector 11 belapur Thane, Maharashtra, 400614',
+    };
+
+    const headerDetails = {
+      name: isSuperadmin ? poppikDetails.name : (currentUser?.name || 'Company Name'),
+      pan: isSuperadmin ? poppikDetails.pan : (currentUser?.gstin ? currentUser.gstin.substring(2, 12) : '-'),
+      gstin: isSuperadmin ? poppikDetails.gstin : (currentUser?.gstin || '-'),
+      phone: isSuperadmin ? poppikDetails.phone : (currentUser?.phone || '-'),
+      email: isSuperadmin ? poppikDetails.email : (currentUser?.email || '-'),
+      address: isSuperadmin ? poppikDetails.address : (currentUser?.city ? `${currentUser.city}` : '-'),
+    };
 
     // Headers
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
-    doc.text("POPPIK LIFESTYLE PVT LTD", 40, 40);
+    doc.text(headerDetails.name.toUpperCase(), 40, 40);
     
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text("PAN No: AAQCP0247B | GSTIN: 27AAQCP0247B1ZK", 40, 55);
-    doc.text("Mobile: 8655324379 | Email: account@poppik.in", 40, 70);
-    doc.text("213 Sky Lark sector 11 belapur Thane, Maharashtra, 400614", 40, 85);
+    doc.text(`PAN No: ${headerDetails.pan} | GSTIN: ${headerDetails.gstin}`, 40, 55);
+    doc.text(`Mobile: ${headerDetails.phone} | Email: ${headerDetails.email}`, 40, 70);
+    doc.text(headerDetails.address, 40, 85);
 
     // Right aligned "Tax Invoice" and "Original For Recipient"
     doc.setFontSize(16);
@@ -208,29 +232,29 @@ function CSAMyInvoices() {
 
     // Meta Banner
     doc.setFontSize(10);
-    doc.text(`Invoice No: ${viewInvoice.invoiceNo}`, 40, 110);
-    doc.text(`Invoice Date: ${new Date(viewInvoice.createdAt).toLocaleDateString()}`, 200, 110);
+    doc.text(`Invoice No: ${invoiceToPrint.invoiceNo}`, 40, 110);
+    doc.text(`Invoice Date: ${new Date(invoiceToPrint.createdAt).toLocaleDateString()}`, 200, 110);
     
     // Bill To
     doc.setFont("helvetica", "bold");
     doc.text("Bill To:", 40, 140);
     doc.setFont("helvetica", "normal");
-    doc.text(viewInvoice.distributor?.companyName || '-', 40, 155);
-    doc.text(`GSTIN: ${viewInvoice.distributor?.gstIn || '-'}`, 40, 170);
-    doc.text(`Mobile: ${viewInvoice.distributor?.phone || '-'}`, 40, 185);
+    doc.text(invoiceToPrint.distributor?.companyName || '-', 40, 155);
+    doc.text(`GSTIN: ${invoiceToPrint.distributor?.gstIn || '-'}`, 40, 170);
+    doc.text(`Mobile: ${invoiceToPrint.distributor?.phone || '-'}`, 40, 185);
 
     // Ship To
     doc.setFont("helvetica", "bold");
     doc.text("Ship To:", doc.internal.pageSize.width / 2 + 20, 140);
     doc.setFont("helvetica", "normal");
-    doc.text(viewInvoice.distributor?.companyName || '-', doc.internal.pageSize.width / 2 + 20, 155);
-    doc.text(`GSTIN: ${viewInvoice.distributor?.gstIn || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
+    doc.text(invoiceToPrint.distributor?.companyName || '-', doc.internal.pageSize.width / 2 + 20, 155);
+    doc.text(`GSTIN: ${invoiceToPrint.distributor?.gstIn || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
 
     // Items table
     const tableColumn = ["No", "Product", "HSN No.", "MRP", "Qty", "Rate", "Margin %", "Taxable", "GST %", "Total"];
     const tableRows = [];
 
-    viewInvoice.invoiceItems?.forEach((item, idx) => {
+    invoiceToPrint.invoiceItems?.forEach((item, idx) => {
       const mrp = parseFloat(item.product?.baseSellingPrice) || 0;
       const rate = parseFloat(item.rate) || 0;
       const qty = parseInt(item.qty) || 0;
@@ -267,18 +291,18 @@ function CSAMyInvoices() {
 
     // Totals
     const finalY = doc.lastAutoTable.finalY + 20;
-    doc.setFont("helvetica", "bold");
-    doc.text(`Taxable Amount: Rs. ${parseFloat(viewInvoice.taxableValue).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY, { align: "right" });
-    if (parseFloat(viewInvoice.cgst) > 0) {
-      doc.text(`CGST: Rs. ${parseFloat(viewInvoice.cgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
-      doc.text(`SGST: Rs. ${parseFloat(viewInvoice.sgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 30, { align: "right" });
-    }
-    if (parseFloat(viewInvoice.igst) > 0) {
-      doc.text(`IGST: Rs. ${parseFloat(viewInvoice.igst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
-    }
-    doc.text(`Grand Total: Rs. ${parseFloat(viewInvoice.grandTotal).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 45, { align: "right" });
+    
+    // Always calculate total GST and split into CGST/SGST
+    const totalGst = parseFloat(invoiceToPrint.cgst || 0) + parseFloat(invoiceToPrint.sgst || 0) + parseFloat(invoiceToPrint.igst || 0);
+    const halfGst = totalGst / 2;
 
-    doc.save(`Invoice_${viewInvoice.invoiceNo}.pdf`);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Taxable Amount: Rs. ${parseFloat(invoiceToPrint.taxableValue).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY, { align: "right" });
+    doc.text(`CGST: Rs. ${halfGst.toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
+    doc.text(`SGST: Rs. ${halfGst.toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 30, { align: "right" });
+    doc.text(`Grand Total: Rs. ${parseFloat(invoiceToPrint.grandTotal).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 45, { align: "right" });
+
+    doc.save(`Invoice_${invoiceToPrint.invoiceNo}.pdf`);
   }
 
   if (loading) {
@@ -454,7 +478,7 @@ function CSAMyInvoices() {
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={handlePrint}
+                  onClick={() => handlePrint()}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
                 >
                   <Download size={18} />

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Eye, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Eye, Download, X } from 'lucide-react'
+import { downloadReturnPDF } from '../utils/returnPdfGenerator'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -296,13 +298,22 @@ function CSAMySalesReturns() {
                       <td className="px-4 py-3 text-gray-600">{sr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(sr.grandTotal)}</td>
                       <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => setViewReturn(sr)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                          title="View Details"
-                        >
-                          <Eye size={18} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setViewReturn(sr)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            title="View Details"
+                          >
+                            <Eye size={18} />
+                          </button>
+                          <button
+                            onClick={() => downloadReturnPDF(sr, 'Sales Return')}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
+                            title="Download PDF"
+                          >
+                            <Download size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -590,6 +601,8 @@ function CSAMySalesReturns() {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN No.</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Batch</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">MRP</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Margin %</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Rate</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Taxable</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GST%</th>
@@ -603,6 +616,8 @@ function CSAMySalesReturns() {
                         const gstPercentage = parseFloat(item.product?.gstPercentage) || parseFloat(item.gstPercentage) || 0
                         const total = qty * rate
                         const taxable = total / (1 + (gstPercentage / 100))
+                        const mrp = parseFloat(item.mrp || item.product?.baseSellingPrice) || 0
+                        const margin = mrp > 0 ? ((mrp - rate) / mrp) * 100 : 0
                         
                         return (
                           <tr key={idx} className="hover:bg-gray-50">
@@ -613,6 +628,8 @@ function CSAMySalesReturns() {
                             <td className="px-4 py-3 text-gray-600">{item.product?.hsn || '-'}</td>
                             <td className="px-4 py-3 text-gray-600">{item.batchNo || '-'}</td>
                             <td className="px-4 py-3 font-medium">{qty}</td>
+                            <td className="px-4 py-3 text-gray-700">₹{mrp.toFixed(2)}</td>
+                            <td className="px-4 py-3 text-red-600 font-medium">{margin.toFixed(0)}%</td>
                             <td className="px-4 py-3 text-gray-700">₹{rate.toFixed(2)}</td>
                             <td className="px-4 py-3 text-gray-700">₹{taxable.toFixed(2)}</td>
                             <td className="px-4 py-3 text-gray-700">{gstPercentage}%</td>
@@ -630,23 +647,16 @@ function CSAMySalesReturns() {
                       <span className="text-gray-600 text-sm md:text-base">Taxable Value:</span>
                       <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.taxableValue) || 0).toFixed(2)}</span>
                     </div>
-                    {(parseFloat(viewReturn.cgst) > 0 || parseFloat(viewReturn.sgst) > 0) ? (
                       <>
                         <div className="flex items-center gap-4 md:gap-8">
                           <span className="text-gray-600 text-sm md:text-base">CGST:</span>
-                          <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.cgst) || 0).toFixed(2)}</span>
+                          <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.cgst || 0) + parseFloat(viewReturn.igst || 0) / 2).toFixed(2)}</span>
                         </div>
                         <div className="flex items-center gap-4 md:gap-8">
                           <span className="text-gray-600 text-sm md:text-base">SGST:</span>
-                          <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.sgst) || 0).toFixed(2)}</span>
+                          <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.sgst || 0) + parseFloat(viewReturn.igst || 0) / 2).toFixed(2)}</span>
                         </div>
                       </>
-                    ) : (
-                      <div className="flex items-center gap-4 md:gap-8">
-                        <span className="text-gray-600 text-sm md:text-base">IGST:</span>
-                        <span className="font-medium text-gray-800">₹{(parseFloat(viewReturn.igst) || 0).toFixed(2)}</span>
-                      </div>
-                    )}
                     <div className="border-t border-gray-300 pt-2 flex items-center gap-4 md:gap-8">
                       <span className="text-base md:text-lg font-semibold text-gray-800">Grand Total:</span>
                       <span className="text-lg md:text-xl font-bold text-red-600">₹{(parseFloat(viewReturn.grandTotal) || 0).toFixed(2)}</span>

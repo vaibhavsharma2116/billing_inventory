@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Edit2, Eye, X, RefreshCw, Printer, Download } from 'lucide-react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import { Edit2, Eye, X, RefreshCw, Printer, Download, Search } from 'lucide-react'
+import { downloadInvoicePDF } from '../utils/invoicePdfGenerator'
 
 const API_URL = import.meta.env.VITE_API_URL
 
@@ -136,110 +135,9 @@ function InvoicesList() {
     }
   }
 
-  const handlePrint = () => {
+  const downloadPDF = () => {
     if (!viewInvoice) return;
-
-    const doc = new jsPDF('p', 'pt', 'a4');
-
-    // Headers
-    doc.setFontSize(20);
-    doc.setFont("helvetica", "bold");
-    const distName = viewInvoice.distributor?.companyName || user?.companyName || user?.name || "DISTRIBUTOR";
-    doc.text(distName, 40, 40);
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    const gstIn = viewInvoice.distributor?.gstIn || user?.gstIn || '-';
-    const phone = viewInvoice.distributor?.phone || user?.phone || '-';
-    const email = viewInvoice.distributor?.email || user?.email || '-';
-    doc.text(`PAN No: ${extractPan(gstIn)} | GSTIN: ${gstIn}`, 40, 55);
-    doc.text(`Mobile: ${phone} | Email: ${email}`, 40, 70);
-    const address = viewInvoice.distributor?.address || user?.address || '';
-    const city = viewInvoice.distributor?.city || user?.city || '';
-    const addressLine = `${address} ${city ? city + ', ' : ''}Maharashtra`.trim();
-    doc.text(addressLine, 40, 85);
-
-    // Right aligned "Tax Invoice" and "Original For Recipient"
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("Tax Invoice", doc.internal.pageSize.width - 40, 40, { align: "right" });
-    doc.setFontSize(10);
-    doc.text("Original For Recipient", doc.internal.pageSize.width - 40, 55, { align: "right" });
-
-    // Meta Banner
-    doc.setFontSize(10);
-    doc.text(`Invoice No: ${viewInvoice.invoiceNo}`, 40, 110);
-    doc.text(`Invoice Date: ${new Date(viewInvoice.createdAt).toLocaleDateString()}`, 200, 110);
-    
-    // Bill To
-    doc.setFont("helvetica", "bold");
-    doc.text("Bill To:", 40, 140);
-    doc.setFont("helvetica", "normal");
-    doc.text(viewInvoice.party?.name || '-', 40, 155);
-    doc.text(`GSTIN: ${viewInvoice.party?.gstin || '-'}`, 40, 170);
-    doc.text(`Mobile: ${viewInvoice.party?.phone || '-'}`, 40, 185);
-
-    // Ship To
-    doc.setFont("helvetica", "bold");
-    doc.text("Ship To:", doc.internal.pageSize.width / 2 + 20, 140);
-    doc.setFont("helvetica", "normal");
-    doc.text(viewInvoice.party?.name || '-', doc.internal.pageSize.width / 2 + 20, 155);
-    doc.text(`GSTIN: ${viewInvoice.party?.gstin || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
-
-    // Items table
-    const tableColumn = ["No", "Product", "HSN No.", "MRP", "Qty", "Rate", "Margin %", "Taxable", "GST %", "Total"];
-    const tableRows = [];
-
-    viewInvoice.invoiceItems?.forEach((item, idx) => {
-      const mrp = parseFloat(item.mrp) || parseFloat(item.product?.baseSellingPrice) || 0;
-      const rateWithGst = parseFloat(item.rate) || 0;
-      const qty = parseInt(item.qty) || 0;
-      const extraMarginPercentage = parseFloat(item.extraMarginPercentage) || 0;
-      const gstPercent = parseFloat(item.gstPercentage) || 18;
-
-      const rateExcludingGst = rateWithGst / (1 + (gstPercent / 100));
-      const taxableAfterMargin = rateExcludingGst * qty;
-      const taxAmt = taxableAfterMargin * (gstPercent / 100);
-      const itemTotal = taxableAfterMargin + taxAmt;
-
-      const itemData = [
-        ` ${idx + 1} `,
-        ` ${item.productName || item.product?.name || '-'} `,
-        ` ${item.hsn || item.product?.hsn || '-'} `,
-        ` ${mrp.toFixed(2)} `,
-        ` ${qty} `,
-        ` ${rateWithGst.toFixed(2)} `,
-        ` ${extraMarginPercentage}% `,
-        ` ${taxableAfterMargin.toFixed(2)} `,
-        ` ${gstPercent}% `,
-        ` ${itemTotal.toFixed(2)} `
-      ];
-      tableRows.push(itemData);
-    });
-
-    autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 210,
-      theme: 'grid',
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [205, 168, 79], textColor: [255, 255, 255] },
-    });
-
-    // Totals
-    const finalY = doc.lastAutoTable.finalY + 20;
-    doc.setFont("helvetica", "bold");
-    doc.text(`Taxable Amount: Rs. ${parseFloat(viewInvoice.taxableValue).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY, { align: "right" });
-    if (parseFloat(viewInvoice.cgst) > 0) {
-      doc.text(`CGST: Rs. ${parseFloat(viewInvoice.cgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
-      doc.text(`SGST: Rs. ${parseFloat(viewInvoice.sgst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 30, { align: "right" });
-    }
-    if (parseFloat(viewInvoice.igst) > 0) {
-      doc.text(`IGST: Rs. ${parseFloat(viewInvoice.igst).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 15, { align: "right" });
-    }
-    doc.text(`Grand Total: Rs. ${parseFloat(viewInvoice.grandTotal).toFixed(2)}`, doc.internal.pageSize.width - 40, finalY + 45, { align: "right" });
-
-    doc.save(`Invoice_${viewInvoice.invoiceNo}.pdf`);
+    downloadInvoicePDF(viewInvoice, user, false);
   }
 
   if (loading) {
@@ -397,7 +295,7 @@ function InvoicesList() {
               <h2 className="text-xl font-bold text-gray-800">Invoice {viewInvoice.invoiceNo}</h2>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={handlePrint}
+                  onClick={downloadPDF}
                   className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
                 >
                   <Download size={18} />
@@ -428,21 +326,12 @@ function InvoicesList() {
                   <p className="text-sm text-gray-700">
                     <span className="font-medium">Taxable:</span> {formatCurrency(viewInvoice.taxableValue)}
                   </p>
-                  {(parseFloat(viewInvoice.cgst) > 0 || (parseFloat(viewInvoice.igst) === 0 && parseFloat(viewInvoice.cgst) === 0)) && (
-                    <p className="text-sm text-gray-700">
-                      <span className="font-medium">CGST:</span> {formatCurrency(viewInvoice.cgst)}
-                    </p>
-                  )}
-                  {(parseFloat(viewInvoice.sgst) > 0 || (parseFloat(viewInvoice.igst) === 0 && parseFloat(viewInvoice.sgst) === 0)) && (
-                    <p className="text-sm text-gray-700">
-                      <span className="font-medium">SGST:</span> {formatCurrency(viewInvoice.sgst)}
-                    </p>
-                  )}
-                  {parseFloat(viewInvoice.igst) > 0 && (
-                    <p className="text-sm text-gray-700">
-                      <span className="font-medium">IGST:</span> {formatCurrency(viewInvoice.igst)}
-                    </p>
-                  )}
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">CGST:</span> {formatCurrency(parseFloat(viewInvoice.cgst || 0) + parseFloat(viewInvoice.igst || 0) / 2)}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">SGST:</span> {formatCurrency(parseFloat(viewInvoice.sgst || 0) + parseFloat(viewInvoice.igst || 0) / 2)}
+                  </p>
                   <p className="text-sm font-bold text-gray-900 mt-2 border-t border-gray-300 pt-2">
                     Total: {formatCurrency(viewInvoice.grandTotal)}
                   </p>

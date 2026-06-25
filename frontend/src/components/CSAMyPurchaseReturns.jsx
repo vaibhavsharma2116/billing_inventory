@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Eye } from 'lucide-react'
+import { Eye, Download } from 'lucide-react'
+import { downloadReturnPDF } from '../utils/returnPdfGenerator'
 
 const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27'
@@ -277,9 +278,14 @@ function CSAMyPurchaseReturns() {
                       <td className="px-4 py-3 text-gray-600">{pr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(pr.grandTotal)}</td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => setViewReturn(pr)} className="text-blue-600 hover:text-blue-800" title="View Return">
-                          <Eye className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => setViewReturn(pr)} className="text-blue-600 hover:text-blue-800" title="View Return">
+                            <Eye className="w-5 h-5" />
+                          </button>
+                          <button onClick={() => downloadReturnPDF(pr, 'Purchase Return')} className="text-green-600 hover:text-green-800" title="Download PDF">
+                            <Download className="w-5 h-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

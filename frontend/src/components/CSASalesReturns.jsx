@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Download } from 'lucide-react'
+import { downloadReturnPDF } from '../utils/returnPdfGenerator'
 
 const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27'
@@ -268,12 +270,13 @@ function CSASalesReturns() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {salesReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
                       No sales returns yet
                     </td>
                   </tr>
@@ -284,6 +287,11 @@ function CSASalesReturns() {
                       <td className="px-4 py-3 text-gray-600">{new Date(sr.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-gray-600">{sr.reason || '-'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(sr.grandTotal)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => downloadReturnPDF(sr, 'Sales Return')} className="text-green-600 hover:text-green-800" title="Download PDF">
+                          <Download className="w-5 h-5" />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}

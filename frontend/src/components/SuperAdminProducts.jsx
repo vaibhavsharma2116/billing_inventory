@@ -10,9 +10,9 @@ const getAuthHeaders = () => {
 
 function SuperAdminProducts() {
   const [products, setProducts] = useState([])
-  const [distributors, setDistributors] = useState([])
+  const [csas, setCsas] = useState([])
   const [search, setSearch] = useState('')
-  const [selectedDistributor, setSelectedDistributor] = useState('')
+  const [selectedCsa, setSelectedCsa] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -27,12 +27,12 @@ function SuperAdminProducts() {
     baseSellingPrice: '',
     gstPercentage: '',
     currentStock: '0',
-    distributorId: '',
-    addToAllDistributors: false
+    csaId: '',
+    addToAllCsas: false
   })
   // Upload state
   const [uploadFile, setUploadFile] = useState(null)
-  const [uploadDistributorId, setUploadDistributorId] = useState('')
+  const [uploadCsaId, setUploadCsaId] = useState('')
   const [uploadAddToAll, setUploadAddToAll] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
@@ -40,15 +40,15 @@ function SuperAdminProducts() {
 
   useEffect(() => {
     fetchProducts()
-    fetchDistributors()
-  }, [search, selectedDistributor])
+    fetchCsas()
+  }, [search, selectedCsa])
 
   const fetchProducts = async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams()
       if (search) params.append('search', search)
-      if (selectedDistributor) params.append('distributorId', selectedDistributor)
+      if (selectedCsa) params.append('csaId', selectedCsa)
       
       const res = await fetch(`${API_URL}/superadmin/products${params.toString() ? `?${params.toString()}` : ''}`, { 
         headers: getAuthHeaders() 
@@ -62,16 +62,16 @@ function SuperAdminProducts() {
     }
   }
 
-  const fetchDistributors = async () => {
+  const fetchCsas = async () => {
     try {
-      const res = await fetch(`${API_URL}/superadmin/distributors`, { 
+      const res = await fetch(`${API_URL}/superadmin/csas`, { 
         headers: getAuthHeaders() 
       })
       const data = await res.json()
-      console.log('Fetched distributors:', data)
-      setDistributors(data)
+      console.log('Fetched CSAs:', data)
+      setCsas(data)
     } catch (err) {
-      console.error('Failed to fetch distributors')
+      console.error('Failed to fetch CSAs')
     }
   }
 
@@ -87,8 +87,8 @@ function SuperAdminProducts() {
       baseSellingPrice: '',
       gstPercentage: '',
       currentStock: '0',
-      distributorId: '',
-      addToAllDistributors: false
+      csaId: '',
+      addToAllCsas: false
     })
     setIsModalOpen(true)
   }
@@ -162,6 +162,58 @@ function SuperAdminProducts() {
     }
   }
 
+  const handleDeleteAll = async () => {
+    if (!window.confirm('WARNING: Are you ABSOLUTELY sure you want to delete ALL products in the inventory? This action cannot be undone!')) return
+    
+    // Additional confirmation for safety
+    const confirmText = window.prompt('Type "DELETE ALL" to confirm:')
+    if (confirmText !== 'DELETE ALL') {
+      alert('Action cancelled.')
+      return
+    }
+
+    try {
+      setLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/products/all`, { 
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      if (!res.ok) throw new Error('Failed to delete all products')
+      fetchProducts()
+      alert('All products have been deleted successfully.')
+    } catch (err) {
+      setError('Failed to delete all products')
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteCsaProducts = async () => {
+    if (!selectedCsa) return
+    const selectedCsaName = csas.find(c => c.id === selectedCsa)?.name || 'this CSA'
+    
+    if (!window.confirm(`WARNING: Are you sure you want to delete ALL products for ${selectedCsaName}? This action cannot be undone!`)) return
+    
+    const confirmText = window.prompt(`Type "DELETE" to confirm deleting products for ${selectedCsaName}:`)
+    if (confirmText !== 'DELETE') {
+      alert('Action cancelled.')
+      return
+    }
+
+    try {
+      setLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/products/all?csaId=${selectedCsa}`, { 
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      if (!res.ok) throw new Error('Failed to delete CSA products')
+      fetchProducts()
+      alert(`Products for ${selectedCsaName} have been deleted successfully.`)
+    } catch (err) {
+      setError('Failed to delete CSA products')
+      setLoading(false)
+    }
+  }
+
   // Upload functions
   const handleDrag = (e) => {
     e.preventDefault()
@@ -195,14 +247,14 @@ function SuperAdminProducts() {
       setError('Please select a file first')
       return
     }
-    if (!uploadAddToAll && !uploadDistributorId) {
-      setError('Either select a distributor or check "Add to All Distributors"')
+    if (!uploadAddToAll && !uploadCsaId) {
+      setError('Either select a CSA or check "Add to All CSAs"')
       return
     }
     console.log('=== Uploading ===')
     console.log('uploadAddToAll:', uploadAddToAll)
-    console.log('uploadDistributorId:', uploadDistributorId)
-    console.log('distributors:', distributors)
+    console.log('uploadCsaId:', uploadCsaId)
+    console.log('csas:', csas)
     try {
       setUploadLoading(true)
       setError('')
@@ -210,9 +262,9 @@ function SuperAdminProducts() {
       const formData = new FormData()
       formData.append('file', uploadFile)
       if (uploadAddToAll) {
-        formData.append('addToAllDistributors', 'true')
+        formData.append('addToAllCsas', 'true')
       } else {
-        formData.append('distributorId', uploadDistributorId)
+        formData.append('csaId', uploadCsaId)
       }
       const response = await fetch(`${API_URL}/superadmin/products/upload`, {
         method: 'POST',
@@ -243,13 +295,32 @@ function SuperAdminProducts() {
     <div className="p-4 md:p-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Inventory & Products (Super Admin)</h1>
-        <button
-          onClick={openAddModal}
-          className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
-        >
-          <Plus size={20} />
-          Add New Product
-        </button>
+        <div className="flex items-center gap-3">
+          {selectedCsa && (
+            <button
+              onClick={handleDeleteCsaProducts}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
+              title="Delete products for the currently selected CSA filter"
+            >
+              <X size={20} />
+              Delete CSA Products
+            </button>
+          )}
+          <button
+            onClick={handleDeleteAll}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
+          >
+            <X size={20} />
+            Delete All
+          </button>
+          <button
+            onClick={openAddModal}
+            className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Add New Product
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -262,19 +333,19 @@ function SuperAdminProducts() {
       <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
         <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Upload Products via Excel or PDF</h2>
         
-        {/* Distributor Selection */}
+        {/* CSA Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Distributor</label>
+            <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">CSA</label>
             <select
-              value={uploadDistributorId}
-              onChange={(e) => { setUploadDistributorId(e.target.value); }}
+              value={uploadCsaId}
+              onChange={(e) => { setUploadCsaId(e.target.value); }}
               disabled={uploadAddToAll}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 disabled:opacity-50"
             >
-              <option key="select-distributor" value="">Select Distributor</option>
-              {distributors.map((d, index) => (
-                <option key={d.id || `distributor-${index}`} value={d.id}>{d.companyName}</option>
+              <option key="select-csa" value="">Select CSA</option>
+              {csas.map((csa, index) => (
+                <option key={csa.id || `csa-${index}`} value={csa.id}>{csa.name}</option>
               ))}
             </select>
           </div>
@@ -286,7 +357,7 @@ function SuperAdminProducts() {
                 onChange={(e) => setUploadAddToAll(e.target.checked)}
                 className="w-4 h-4"
               />
-              <span className="text-sm font-medium text-gray-700">Add to All Distributors</span>
+              <span className="text-sm font-medium text-gray-700">Add to All CSAs</span>
             </label>
           </div>
         </div>
@@ -368,13 +439,13 @@ function SuperAdminProducts() {
           </div>
           <div className="w-full md:w-64">
             <select
-              value={selectedDistributor}
-              onChange={(e) => setSelectedDistributor(e.target.value)}
+              value={selectedCsa}
+              onChange={(e) => setSelectedCsa(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
             >
-              <option key="all-distributors" value="">All Distributors</option>
-              {distributors.map((d, index) => (
-                <option key={d.id || `distributor-${index}`} value={d.id}>{d.companyName}</option>
+              <option key="all-csas" value="">All CSAs</option>
+              {csas.map((c, index) => (
+                <option key={c.id || `csa-${index}`} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
@@ -392,7 +463,7 @@ function SuperAdminProducts() {
             <table className="w-full min-w-[900px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Distributor</th>
+                  <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">CSA</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">SKU</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">HSN</th>
@@ -415,7 +486,7 @@ function SuperAdminProducts() {
                     <tr key={product.id} className="hover:bg-gray-50">
                       <td className="px-4 md:px-6 py-4">
                         <div className="font-medium text-gray-900 text-sm md:text-base">
-                          {product.distributor?.companyName || '-'}
+                          {product.csa?.name || '-'}
                         </div>
                       </td>
                       <td className="px-4 md:px-6 py-4">
@@ -487,16 +558,16 @@ function SuperAdminProducts() {
               {!editingProduct && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Distributor</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CSA</label>
                     <select
-                      value={formData.distributorId}
-                      onChange={(e) => setFormData({...formData, distributorId: e.target.value})}
-                      disabled={formData.addToAllDistributors}
+                      value={formData.csaId}
+                      onChange={(e) => setFormData({...formData, csaId: e.target.value})}
+                      disabled={formData.addToAllCsas}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 disabled:opacity-50"
                     >
-                      <option key="modal-select-distributor" value="">Select Distributor</option>
-                      {distributors.map((d) => (
-                        <option key={d.id} value={d.id}>{d.companyName}</option>
+                      <option key="modal-select-csa" value="">Select CSA</option>
+                      {csas.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
                   </div>
@@ -504,11 +575,11 @@ function SuperAdminProducts() {
                     <label className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
                       <input
                         type="checkbox"
-                        checked={formData.addToAllDistributors}
-                        onChange={(e) => setFormData({...formData, addToAllDistributors: e.target.checked})}
+                        checked={formData.addToAllCsas}
+                        onChange={(e) => setFormData({...formData, addToAllCsas: e.target.checked})}
                         className="w-4 h-4"
                       />
-                      <span className="text-sm font-medium text-gray-700">Add to All Distributors</span>
+                      <span className="text-sm font-medium text-gray-700">Add to All CSAs</span>
                     </label>
                   </div>
                 </div>

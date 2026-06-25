@@ -21,7 +21,20 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [globalStats, setGlobalStats] = useState({
     totalActiveDistributors: 0,
-    totalSales: 0,
+    primarySales: 0,
+    primarySalesReturns: 0,
+    primaryRevenue: 0,
+    primaryPaymentsReceived: 0,
+    secondarySales: 0,
+    secondarySalesReturns: 0,
+    secondaryRevenue: 0,
+    secondaryPaymentsReceived: 0,
+    tertiarySales: 0,
+    tertiarySalesReturns: 0,
+    tertiaryRevenue: 0,
+    tertiaryPaymentsReceived: 0,
+    totalParties: 0,
+    totalProducts: 0,
     totalClaims: 0
   })
   const [distributors, setDistributors] = useState([])
@@ -793,16 +806,21 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     const activeCsaCount = csas.filter(c => c.isActive !== false).length
     const suspendedCsaCount = csas.length - activeCsaCount
 
-    // Calculate global stats from all distributors
-    const totalParties = distributors.reduce((sum, d) => sum + (d.partyCount || 0), 0)
-    const totalProducts = distributors.reduce((sum, d) => sum + (d.productCount || 0), 0)
-    const totalSales = distributors.reduce((sum, d) => sum + getNum(d.totalSales), 0)
-    const totalSalesReturns = distributors.reduce((sum, d) => sum + getNum(d.totalSalesReturns), 0)
-    const totalRevenue = totalSales - totalSalesReturns
-    const totalPaymentsReceived = distributors.reduce((sum, d) => sum + getNum(d.totalPaymentsReceived), 0)
-    const totalPurchaseReturns = distributors.reduce((sum, d) => sum + getNum(d.totalPurchaseReturns), 0)
-    const totalPaymentsOut = distributors.reduce((sum, d) => sum + getNum(d.totalPaymentsOut), 0)
-    const pendingPayments = totalRevenue - totalPaymentsReceived
+    // Use accurate global stats directly from the backend
+    const totalParties = globalStats.totalParties || 0
+    const totalProducts = globalStats.totalProducts || 0
+    
+    const primaryRevenue = globalStats.primaryRevenue || 0
+    const primaryPaymentsReceived = globalStats.primaryPaymentsReceived || 0
+    const pendingPrimaryPayments = primaryRevenue - primaryPaymentsReceived
+
+    const secondaryRevenue = globalStats.secondaryRevenue || 0
+    const secondaryPaymentsReceived = globalStats.secondaryPaymentsReceived || 0
+    const pendingSecondaryPayments = secondaryRevenue - secondaryPaymentsReceived
+
+    const tertiaryRevenue = globalStats.tertiaryRevenue || 0
+    const tertiaryPaymentsReceived = globalStats.tertiaryPaymentsReceived || 0
+    const pendingTertiaryPayments = tertiaryRevenue - tertiaryPaymentsReceived
 
     const statusChartData = {
       labels: ['Active', 'Suspended'],
@@ -1012,69 +1030,73 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
             </div>
           </div>
 
-          {/* Total Revenue */}
-          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
-                <IndianRupee size={20} className="md:w-8 md:h-8 text-yellow-700" />
-              </div>
-              <p className="text-sm md:text-lg font-semibold text-gray-800">Total Revenue</p>
-              <p className="text-xl md:text-3xl font-bold text-yellow-700 mt-2">₹{loading ? '...' : totalRevenue.toLocaleString()}</p>
+        </div>
+
+        {/* Primary Sales Tier */}
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-indigo-500 pl-3">Primary Sales <span className="text-sm font-normal text-gray-500 ml-2">(Superadmin ➔ CSA)</span></h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+            <div className="bg-gradient-to-br from-indigo-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-indigo-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Revenue</p>
+              <p className="text-xl md:text-2xl font-bold text-indigo-700 truncate" title={`₹${primaryRevenue}`}>₹{loading ? '...' : primaryRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-gradient-to-br from-red-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-red-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Returns</p>
+              <p className="text-xl md:text-2xl font-bold text-red-600 truncate" title={`₹${globalStats.primarySalesReturns || 0}`}>₹{loading ? '...' : (globalStats.primarySalesReturns || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-gradient-to-br from-green-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-green-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Received</p>
+              <p className="text-xl md:text-2xl font-bold text-green-600 truncate" title={`₹${primaryPaymentsReceived}`}>₹{loading ? '...' : primaryPaymentsReceived.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-orange-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Pending</p>
+              <p className="text-xl md:text-2xl font-bold text-orange-600 truncate" title={`₹${Math.max(0, pendingPrimaryPayments)}`}>₹{loading ? '...' : Math.max(0, pendingPrimaryPayments).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
             </div>
           </div>
+        </div>
 
-          {/* Sales Returns */}
-          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-red-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
-                <RefreshCw size={20} className="md:w-8 md:h-8 text-red-600" />
-              </div>
-              <p className="text-sm md:text-lg font-semibold text-gray-800">Sales Returns</p>
-              <p className="text-xl md:text-3xl font-bold text-red-600 mt-2">₹{loading ? '...' : totalSalesReturns.toLocaleString()}</p>
+        {/* Secondary Sales Tier */}
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-purple-500 pl-3">Secondary Sales <span className="text-sm font-normal text-gray-500 ml-2">(CSA ➔ Distributor)</span></h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+            <div className="bg-gradient-to-br from-purple-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-purple-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Revenue</p>
+              <p className="text-xl md:text-2xl font-bold text-purple-700 truncate" title={`₹${secondaryRevenue}`}>₹{loading ? '...' : secondaryRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-gradient-to-br from-red-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-red-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Returns</p>
+              <p className="text-xl md:text-2xl font-bold text-red-600 truncate" title={`₹${globalStats.secondarySalesReturns || 0}`}>₹{loading ? '...' : (globalStats.secondarySalesReturns || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-gradient-to-br from-green-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-green-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Received</p>
+              <p className="text-xl md:text-2xl font-bold text-green-600 truncate" title={`₹${secondaryPaymentsReceived}`}>₹{loading ? '...' : secondaryPaymentsReceived.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-orange-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Pending</p>
+              <p className="text-xl md:text-2xl font-bold text-orange-600 truncate" title={`₹${Math.max(0, pendingSecondaryPayments)}`}>₹{loading ? '...' : Math.max(0, pendingSecondaryPayments).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
             </div>
           </div>
+        </div>
 
-          {/* Purchase Returns */}
-          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-cyan-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
-                <RefreshCw size={20} className="md:w-8 md:h-8 text-cyan-600" />
-              </div>
-              <p className="text-sm md:text-lg font-semibold text-gray-800">Purchase Returns</p>
-              <p className="text-xl md:text-3xl font-bold text-cyan-600 mt-2">₹{loading ? '...' : totalPurchaseReturns.toLocaleString()}</p>
+        {/* Tertiary Sales Tier */}
+        <div className="mb-6 md:mb-8">
+          <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-blue-500 pl-3">Tertiary Sales <span className="text-sm font-normal text-gray-500 ml-2">(Distributor ➔ Final Market)</span></h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+            <div className="bg-gradient-to-br from-blue-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-blue-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Revenue</p>
+              <p className="text-xl md:text-2xl font-bold text-blue-700 truncate" title={`₹${tertiaryRevenue}`}>₹{loading ? '...' : tertiaryRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
             </div>
-          </div>
-
-          {/* Payments Received */}
-          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-green-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
-                <CreditCard size={20} className="md:w-8 md:h-8 text-green-600" />
-              </div>
-              <p className="text-sm md:text-lg font-semibold text-gray-800">Payments Received</p>
-              <p className="text-xl md:text-3xl font-bold text-green-600 mt-2">₹{loading ? '...' : totalPaymentsReceived.toLocaleString()}</p>
+            <div className="bg-gradient-to-br from-red-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-red-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Returns</p>
+              <p className="text-xl md:text-2xl font-bold text-red-600 truncate" title={`₹${globalStats.tertiarySalesReturns || 0}`}>₹{loading ? '...' : (globalStats.tertiarySalesReturns || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
             </div>
-          </div>
-
-          {/* Payments Out */}
-          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-rose-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
-                <RefreshCw size={20} className="md:w-8 md:h-8 text-rose-600" />
-              </div>
-              <p className="text-sm md:text-lg font-semibold text-gray-800">Payments Out</p>
-              <p className="text-xl md:text-3xl font-bold text-rose-600 mt-2">₹{loading ? '...' : totalPaymentsOut.toLocaleString()}</p>
+            <div className="bg-gradient-to-br from-green-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-green-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Received</p>
+              <p className="text-xl md:text-2xl font-bold text-green-600 truncate" title={`₹${tertiaryPaymentsReceived}`}>₹{loading ? '...' : tertiaryPaymentsReceived.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
             </div>
-          </div>
-
-          {/* Pending Payments */}
-          <div className="bg-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 border border-gray-100">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-orange-100 rounded-full flex items-center justify-center mb-2 md:mb-4">
-                <IndianRupee size={20} className="md:w-8 md:h-8 text-orange-600" />
-              </div>
-              <p className="text-sm md:text-lg font-semibold text-gray-800">Pending Payments</p>
-              <p className="text-xl md:text-3xl font-bold text-orange-600 mt-2">₹{loading ? '...' : Math.max(0, pendingPayments).toLocaleString()}</p>
+            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl md:rounded-3xl p-3 md:p-6 shadow-lg border border-orange-100 min-w-0">
+              <p className="text-sm md:text-lg font-semibold text-gray-800 mb-2">Pending</p>
+              <p className="text-xl md:text-2xl font-bold text-orange-600 truncate" title={`₹${Math.max(0, pendingTertiaryPayments)}`}>₹{loading ? '...' : Math.max(0, pendingTertiaryPayments).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
             </div>
           </div>
         </div>
