@@ -74,6 +74,8 @@ model User {
   products     Product[]
   invoices     Invoice[]
   invoiceItems InvoiceItem[]
+  receivedInvoices Invoice[] @relation("ReceivedInvoices")
+  receivedInvoiceItems InvoiceItem[] @relation("ReceivedInvoiceItems")
   purchaseLedgers PurchaseLedger[]
   purchaseItems PurchaseItem[]
   salesReturns SalesReturn[]
@@ -170,6 +172,8 @@ model Invoice {
   distributor   Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId         String?
   csa           User?         @relation(fields: [csaId], references: [id], onDelete: Cascade)
+  receiverCsaId String?
+  receiverCsa   User?         @relation("ReceivedInvoices", fields: [receiverCsaId], references: [id], onDelete: Cascade)
   createdById   String?
   createdBy     User?         @relation("CreatedInvoices", fields: [createdById], references: [id], onDelete: SetNull)
   date          DateTime      @default(now())
@@ -193,6 +197,8 @@ model InvoiceItem {
   distributor         Distributor?  @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId               String?
   csa                 User?      @relation(fields: [csaId], references: [id], onDelete: Cascade)
+  receiverCsaId       String?
+  receiverCsa         User?      @relation("ReceivedInvoiceItems", fields: [receiverCsaId], references: [id], onDelete: Cascade)
   qty                 Int
   costPrice           Decimal?
   rate                Decimal

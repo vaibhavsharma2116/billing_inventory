@@ -93,6 +93,31 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     password: ''
   })
   const [editCsaLoading, setEditCsaLoading] = useState(false)
+  
+  // Edit Admin state
+  const [editingAdmin, setEditingAdmin] = useState(null)
+  const [editAdminForm, setEditAdminForm] = useState({
+    name: '',
+    email: '',
+    password: ''
+  })
+  const [editAdminLoading, setEditAdminLoading] = useState(false)
+
+  // Edit Distributor state
+  const [editingDistributor, setEditingDistributor] = useState(null)
+  const [editDistributorForm, setEditDistributorForm] = useState({
+    companyName: '',
+    ownerName: '',
+    email: '',
+    phone: '',
+    city: '',
+    gstIn: '',
+    password: '',
+    adminId: '',
+    csaId: ''
+  })
+  const [editDistributorLoading, setEditDistributorLoading] = useState(false)
+
   const [createLoading, setCreateLoading] = useState(false)
   // CSA specific states
   const [selectedCsa, setSelectedCsa] = useState(null)
@@ -432,6 +457,62 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
       console.error('Failed to update CSA:', err)
     } finally {
       setEditCsaLoading(false)
+    }
+  }
+
+  // Handle edit Admin
+  const handleEditAdmin = async (e) => {
+    e.preventDefault()
+    if (!editingAdmin) return
+    try {
+      setEditAdminLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/admins/${editingAdmin.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(editAdminForm)
+      })
+      if (res.ok) {
+        setEditingAdmin(null)
+        fetchAllData()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to update Admin')
+      }
+    } catch (err) {
+      console.error('Failed to update Admin:', err)
+    } finally {
+      setEditAdminLoading(false)
+    }
+  }
+
+  // Handle edit Distributor
+  const handleEditDistributor = async (e) => {
+    e.preventDefault()
+    if (!editingDistributor) return
+    try {
+      setEditDistributorLoading(true)
+      const res = await fetch(`${API_URL}/superadmin/distributors/${editingDistributor.distributorId || editingDistributor.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(editDistributorForm)
+      })
+      if (res.ok) {
+        setEditingDistributor(null)
+        fetchAllData()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to update Distributor')
+      }
+    } catch (err) {
+      console.error('Failed to update Distributor:', err)
+    } finally {
+      setEditDistributorLoading(false)
     }
   }
 
@@ -2034,10 +2115,187 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
     </>
   );
 
+  const renderAdmins = () => (
+    <div className="p-4 md:p-6 lg:p-8">
+      <div className="mb-6 flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Admin Directory</h1>
+      </div>
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Name</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {admins.length === 0 ? (
+                <tr><td colSpan="3" className="px-6 py-8 text-center text-gray-500">No Admins found</td></tr>
+              ) : admins.map(admin => (
+                <tr key={admin.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 font-semibold">{admin.name}</td>
+                  <td className="px-6 py-4">{admin.email}</td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => {
+                        setEditingAdmin(admin)
+                        setEditAdminForm({ name: admin.name, email: admin.email, password: '' })
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100"
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderCsas = () => (
+    <div className="p-4 md:p-6 lg:p-8">
+      <div className="mb-6 flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">CSA Directory</h1>
+      </div>
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Name</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Phone</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Admin</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {csas.length === 0 ? (
+                <tr><td colSpan="5" className="px-6 py-8 text-center text-gray-500">No CSAs found</td></tr>
+              ) : csas.map(csa => {
+                const adminName = admins.find(a => a.id === csa.adminId)?.name || 'None'
+                return (
+                  <tr key={csa.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 font-semibold">{csa.name}</td>
+                    <td className="px-6 py-4">{csa.email}</td>
+                    <td className="px-6 py-4">{csa.phone}</td>
+                    <td className="px-6 py-4">{adminName}</td>
+                    <td className="px-6 py-4 text-right flex justify-end gap-2">
+                      <button
+                        onClick={() => navigate(`/superadmin/csa/${csa.id}`)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingCsa(csa)
+                          setEditCsaForm({
+                            name: csa.name,
+                            email: csa.email,
+                            adminId: csa.adminId || '',
+                            phone: csa.phone || '',
+                            gstin: csa.gstin || '',
+                            city: csa.city || '',
+                            password: ''
+                          })
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderDistributors = () => (
+    <div className="p-4 md:p-6 lg:p-8">
+      <div className="mb-6 flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Distributor Directory</h1>
+      </div>
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Company</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Owner</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Admin / CSA</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {distributors.length === 0 ? (
+                <tr><td colSpan="5" className="px-6 py-8 text-center text-gray-500">No Distributors found</td></tr>
+              ) : distributors.map(dist => {
+                const adminName = admins.find(a => a.id === dist.adminId)?.name || 'None'
+                const csaName = csas.find(c => c.id === dist.csaId)?.name || 'None'
+                return (
+                  <tr key={dist.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 font-semibold">{dist.companyName}</td>
+                    <td className="px-6 py-4">{dist.ownerName}</td>
+                    <td className="px-6 py-4">{dist.email}</td>
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      <div>Admin: {adminName}</div>
+                      <div>CSA: {csaName}</div>
+                    </td>
+                    <td className="px-6 py-4 text-right flex justify-end gap-2">
+                      <button
+                        onClick={() => navigate(`/superadmin/distributor/${dist.distributorId || dist.id}`)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingDistributor(dist)
+                          setEditDistributorForm({
+                            companyName: dist.companyName,
+                            ownerName: dist.ownerName,
+                            email: dist.email,
+                            phone: dist.phone || '',
+                            city: dist.city || '',
+                            gstIn: dist.gstIn || '',
+                            password: '',
+                            adminId: dist.adminId || '',
+                            csaId: dist.csaId || ''
+                          })
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+
   const renderContent = () => {
     switch (view) {
       case 'dashboard': return renderDashboard()
-      case 'directory': return renderDirectory()
+      case 'admins': return renderAdmins()
+      case 'csas': return renderCsas()
+      case 'distributors': return renderDistributors()
+      case 'directory': return renderDistributors()
       case 'create': return renderCreate()
       default: return renderDashboard()
     }
@@ -2471,6 +2729,199 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
           </div>
         </div>
       )}
+    {/* Edit Admin Modal */}
+      {editingAdmin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <h2 className="text-xl font-semibold text-gray-900">Edit Admin</h2>
+              <button onClick={() => setEditingAdmin(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleEditAdmin} className="p-6 space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editAdminForm.name}
+                    onChange={(e) => setEditAdminForm({ ...editAdminForm, name: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={editAdminForm.email}
+                    onChange={(e) => setEditAdminForm({ ...editAdminForm, email: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New Password (optional)</label>
+                  <input
+                    type="password"
+                    value={editAdminForm.password}
+                    onChange={(e) => setEditAdminForm({ ...editAdminForm, password: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="Leave empty to keep current password"
+                    minLength={6}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingAdmin(null)}
+                  className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editAdminLoading}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-500 to-teal-600 text-white hover:from-cyan-600 hover:to-teal-700 disabled:opacity-50 rounded-xl font-medium transition"
+                >
+                  {editAdminLoading ? 'Updating...' : 'Update Admin'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Distributor Modal */}
+      {editingDistributor && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h2 className="text-xl font-semibold text-gray-900">Edit Distributor</h2>
+              <button onClick={() => setEditingDistributor(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleEditDistributor} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editDistributorForm.companyName}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, companyName: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editDistributorForm.ownerName}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, ownerName: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={editDistributorForm.email}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, email: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={editDistributorForm.phone}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, phone: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                <input
+                  type="text"
+                  value={editDistributorForm.city}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, city: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN</label>
+                <input
+                  type="text"
+                  value={editDistributorForm.gstIn}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, gstIn: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign to Admin</label>
+                <select
+                  value={editDistributorForm.adminId}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, adminId: e.target.value, csaId: '' })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="">Select Admin (Optional)</option>
+                  {admins.map(admin => (
+                    <option key={admin.id} value={admin.id}>{admin.name} ({admin.email})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign to CSA</label>
+                <select
+                  value={editDistributorForm.csaId}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, csaId: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="">Select CSA (Optional)</option>
+                  {csas
+                    .filter(csa => csa.adminId === editDistributorForm.adminId)
+                    .map(csa => (
+                      <option key={csa.id} value={csa.id}>{csa.name} ({csa.email})</option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password (optional)</label>
+                <input
+                  type="password"
+                  value={editDistributorForm.password}
+                  onChange={(e) => setEditDistributorForm({ ...editDistributorForm, password: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Leave empty to keep current password"
+                  minLength={6}
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingDistributor(null)}
+                  className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editDistributorLoading}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-500 to-teal-600 text-white hover:from-cyan-600 hover:to-teal-700 disabled:opacity-50 rounded-xl font-medium transition"
+                >
+                  {editDistributorLoading ? 'Updating...' : 'Update Distributor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

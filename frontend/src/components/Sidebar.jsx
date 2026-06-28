@@ -34,6 +34,7 @@ const Sidebar = () => {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
   const [isBillingDropdownOpen, setIsBillingDropdownOpen] = useState(false)
   const [isPurchaseDropdownOpen, setIsPurchaseDropdownOpen] = useState(false)
+  const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('')
@@ -173,7 +174,16 @@ const Sidebar = () => {
 
   const superAdminNavItems = [
     { name: 'Command Center', path: '/superadmin/dashboard', icon: Shield },
-    { name: 'Distributor Directory', path: '/superadmin/directory', icon: Building2 },
+    { 
+      name: 'Users', 
+      icon: Users,
+      isDropdown: true,
+      subItems: [
+        { name: 'Admin', path: '/superadmin/admins', icon: Shield },
+        { name: 'CSA', path: '/superadmin/csas', icon: Building2 },
+        { name: 'Distributor', path: '/superadmin/distributors', icon: Users }
+      ]
+    },
     { name: 'Finance Ledger', path: '/superadmin/finance-ledger', icon: IndianRupee },
     { name: 'Inventory & Products', path: '/superadmin/inventory', icon: Package },
     { name: 'Suppliers', path: '/superadmin/suppliers', icon: Users },
@@ -251,6 +261,7 @@ const Sidebar = () => {
 
   const isAnyBillingSubPathActive = ['/billing', '/sales-returns', '/payments-in', '/csa/my-billing', '/csa/my-invoices', '/csa/my-sales-returns', '/csa/my-payments-in'].some(path => location.pathname === path)
   const isAnyPurchaseSubPathActive = ['/purchase', '/purchase-returns', '/payments-out', '/csa/my-purchase', '/csa/my-purchase-returns', '/csa/my-payments-out'].some(path => location.pathname === path)
+  const isAnyUsersSubPathActive = ['/superadmin/admins', '/superadmin/csas', '/superadmin/distributors'].some(path => location.pathname === path)
 
   return (
     <>
@@ -315,6 +326,10 @@ const Sidebar = () => {
                   isDropdownOpen = isPurchaseDropdownOpen
                   toggleDropdown = () => setIsPurchaseDropdownOpen(!isPurchaseDropdownOpen)
                   isActive = isAnyPurchaseSubPathActive
+                } else if (item.name === 'Users') {
+                  isDropdownOpen = isUsersDropdownOpen
+                  toggleDropdown = () => setIsUsersDropdownOpen(!isUsersDropdownOpen)
+                  isActive = isAnyUsersSubPathActive
                 }
 
                 return (

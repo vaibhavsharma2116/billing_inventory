@@ -143,7 +143,9 @@ function App() {
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/claims" element={<Claims />} />
                   <Route path="/superadmin/dashboard" element={<SuperAdminDashboard view="dashboard" />} />
-                  <Route path="/superadmin/directory" element={<SuperAdminDashboard view="directory" />} />
+                  <Route path="/superadmin/admins" element={<SuperAdminDashboard view="admins" />} />
+                  <Route path="/superadmin/csas" element={<SuperAdminDashboard view="csas" />} />
+                  <Route path="/superadmin/distributors" element={<SuperAdminDashboard view="distributors" />} />
                   <Route path="/superadmin/create" element={<SuperAdminDashboard view="create" />} />
                   <Route path="/superadmin/finance-ledger" element={<FinanceLedger />} />
                   <Route path="/superadmin/inventory" element={<SuperAdminProducts />} />

@@ -154,7 +154,12 @@ function CSAMyBilling() {
 
   const addProduct = (product) => {
     const mrp = parseFloat(product.baseSellingPrice) || 0;
-    const rate = mrp * 0.50;
+    let rate = mrp * 0.50;
+    let extraMarginPercentage = 0;
+    
+    if (selectedDistributor?.isCsa) {
+      rate = parseFloat(product.costPrice) || 0;
+    }
 
     const newItem = {
       id: Date.now(),
@@ -357,11 +362,11 @@ function CSAMyBilling() {
         
         {/* Distributor Selection */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6 mb-6">
-          <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Distributor</h2>
+          <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Distributor / CSA</h2>
           <div className="relative" ref={distributorDropdownRef}>
             <input
               type="text"
-              placeholder="Search distributor by company name or GSTIN..."
+              placeholder="Search distributor or CSA by company name or GSTIN..."
               value={searchDistributor}
               onChange={(e) => { setSearchDistributor(e.target.value); setShowDistributorDropdown(true); setSelectedDistributor(null) }}
               onFocus={() => setShowDistributorDropdown(true)}
@@ -501,7 +506,8 @@ function CSAMyBilling() {
                               step="0.01"
                               value={item.rate}
                               onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)}
-                              className="w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg"
+                              disabled={selectedDistributor?.isCsa}
+                              className={`w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg ${selectedDistributor?.isCsa ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}`}
                             />
                           )}
                         </td>
@@ -515,7 +521,8 @@ function CSAMyBilling() {
                               min="0"
                               value={item.extraMarginPercentage}
                               onChange={(e) => updateItem(item.id, 'extraMarginPercentage', parseFloat(e.target.value) || 0)}
-                              className="w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg"
+                              disabled={selectedDistributor?.isCsa}
+                              className={`w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg ${selectedDistributor?.isCsa ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}`}
                             />
                           )}
                         </td>

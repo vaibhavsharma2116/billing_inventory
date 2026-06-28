@@ -681,6 +681,46 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
       }
     }))
 
+    if (req.query.excludeCSAs !== 'true') {
+      const otherCsas = await prisma.user.findMany({
+        where: { role: 'CSA', isActive: true, id: { not: csaId } },
+        select: { id: true, name: true, email: true, phone: true, city: true, gstin: true, createdAt: true }
+      })
+      
+      const formattedCsas = otherCsas.map(csa => ({
+          id: csa.id,
+          distributorId: csa.id,
+          companyName: csa.name + ' (CSA)',
+          ownerName: csa.name,
+          email: csa.email,
+          phone: csa.phone,
+          city: csa.city,
+          gstIn: csa.gstin,
+          isActive: true,
+          isCsa: true,
+          totalSales: 0,
+          totalSalesReturns: 0,
+          totalRevenue: 0,
+          totalPaymentsReceived: 0,
+          totalPurchaseReturns: 0,
+          totalPaymentsOut: 0,
+          totalCompanyDebits: 0,
+          totalAmountRealized: 0,
+          pendingCompanyBalance: 0,
+          invoiceCount: 0,
+          partyCount: 0,
+          productCount: 0,
+          claimCount: 0,
+          salesReturnCount: 0,
+          paymentInCount: 0,
+          purchaseReturnCount: 0,
+          paymentOutCount: 0,
+          createdAt: csa.createdAt
+      }))
+      
+      distributorsWithStats.push(...formattedCsas)
+    }
+
     res.json(convertDecimals(distributorsWithStats))
   } catch (error) {
     console.error(error)
@@ -937,12 +977,29 @@ router.get('/invoices/my', authenticateToken, requireCSA, async (req, res) => {
       include: { 
         party: true, 
         invoiceItems: { include: { product: true } },
-        distributor: { select: { id: true, companyName: true } }
+        distributor: { select: { id: true, companyName: true, gstIn: true, phone: true } },
+        receiverCsa: { select: { id: true, name: true, gstin: true, phone: true } }
       },
       orderBy: { createdAt: 'desc' }
     })
 
-    res.json(convertDecimals(invoices))
+    const formattedInvoices = invoices.map(inv => {
+      if (inv.receiverCsa) {
+        return {
+          ...inv,
+          distributor: {
+            id: inv.receiverCsa.id,
+            distributorId: inv.receiverCsa.id,
+            companyName: inv.receiverCsa.name + ' (CSA)',
+            gstIn: inv.receiverCsa.gstin,
+            phone: inv.receiverCsa.phone
+          }
+        }
+      }
+      return inv
+    })
+
+    res.json(convertDecimals(formattedInvoices))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Failed to fetch invoices' })
@@ -1019,12 +1076,24 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
     console.log('Creating invoice:', { distributorId, csaId, partyId, items: items.length, isInterState })
 
     // Verify CSA has access to this distributor
-    const distributor = await prisma.distributor.findFirst({
+    let distributor = await prisma.distributor.findFirst({
       where: { id: distributorId, csaId }
     })
 
+    let receiverCsaId = null
+    let actualDistributorId = distributorId
+
     if (!distributor) {
-      return res.status(404).json({ error: 'Distributor not found or access denied' })
+      // Check if it's a CSA
+      const targetCsa = await prisma.user.findFirst({
+        where: { id: distributorId, role: 'CSA', isActive: true }
+      })
+      if (targetCsa) {
+        receiverCsaId = targetCsa.id
+        actualDistributorId = null
+      } else {
+        return res.status(404).json({ error: 'Distributor not found or access denied' })
+      }
     }
 
     if (!items || items.length === 0) {
@@ -1037,13 +1106,13 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
         where: { id: partyId }
       })
 
-      if (!party || party.distributorId !== distributorId) {
+      if (!party || party.distributorId !== actualDistributorId) {
         return res.status(403).json({ error: 'Invalid party' })
       }
     }
 
     const lastInvoice = await prisma.invoice.findFirst({
-      where: { distributorId },
+      where: receiverCsaId ? { receiverCsaId } : { distributorId: actualDistributorId },
       orderBy: { invoiceNo: 'desc' }
     })
     const nextInvoiceNo = lastInvoice 
@@ -1083,23 +1152,28 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
       }
 
       const invoiceItemsData = productsData.map(({ product, qty, rate, gstPercentage, extraMarginPercentage }) => {
-        const total = qty * rate // GST already included in rate
+        const finalRate = receiverCsaId ? getNum(product.costPrice) : rate
+        const finalExtraMargin = receiverCsaId ? 0 : (extraMarginPercentage || 0)
+        const total = qty * finalRate // GST already included in rate
         return {
           productId: product.id,
           qty,
           costPrice: product.costPrice,
-          rate,
+          rate: finalRate,
           gstPercentage: product.gstPercentage,
-          extraMarginPercentage: extraMarginPercentage || 0,
+          extraMarginPercentage: finalExtraMargin,
           total,
-          distributorId
+          distributorId: actualDistributorId,
+          receiverCsaId
+
         }
       })
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
         const product = productsData[i].product
-        const total = item.qty * item.rate
+        const finalRate = receiverCsaId ? getNum(product.costPrice) : item.rate
+        const total = item.qty * finalRate
         // Rate is with GST, so taxable value should be without GST (less GST)
         const gstPercent = getNum(product.gstPercentage) || 18
         const taxable = total / (1 + (gstPercent / 100))
@@ -1120,7 +1194,7 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
       const invoiceProfit = grandTotal - invoiceStockCost
       const profitStatus = invoiceProfit >= 0 ? 'PROFIT' : 'LOSS'
 
-      console.log(`📊 Invoice ${nextInvoiceNo} created by CSA for distributor ${distributor.companyName}:`)
+      console.log(`📊 Invoice ${nextInvoiceNo} created by CSA for receiver: ${distributor ? distributor.companyName : receiverCsaId}:`)
       console.log(`  - Stock Cost: ₹${invoiceStockCost.toFixed(2)}`)
       console.log(`  - Revenue: ₹${grandTotal.toFixed(2)}`)
       console.log(`  - Profit: ₹${invoiceProfit.toFixed(2)} (${profitStatus})`)
@@ -1129,7 +1203,8 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
         data: {
           invoiceNo: nextInvoiceNo,
           partyId,
-          distributorId,
+          distributorId: actualDistributorId,
+          receiverCsaId,
           csaId,
           createdById: csaId,
           date: new Date(),
@@ -1158,26 +1233,24 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
             invoiceNo: nextInvoiceNo,
             date: new Date(),
             totalAmount: grandTotal,
-            distributorId: distributorId,
-            csaId: csaId
+            distributorId: actualDistributorId,
+            csaId: receiverCsaId
           }
         })
 
-        // Sync items to distributor's inventory and create PurchaseItems
+        // Sync items to distributor's/CSA's inventory and create PurchaseItems
         for (let i = 0; i < productsData.length; i++) {
           const itemData = invoiceItemsData[i]
           const csaProduct = productsData[i].product
 
-          // Find distributor product by name
-          let distProduct = await tx.product.findFirst({
-            where: {
-              distributorId: distributorId,
-              name: csaProduct.name
-            }
+          // Find target product by name
+          const whereClause = receiverCsaId ? { csaId: receiverCsaId, name: csaProduct.name } : { distributorId: actualDistributorId, name: csaProduct.name }
+          let targetProduct = await tx.product.findFirst({
+            where: whereClause
           })
 
-          if (!distProduct) {
-            distProduct = await tx.product.create({
+          if (!targetProduct) {
+            targetProduct = await tx.product.create({
               data: {
                 name: csaProduct.name,
                 sku: csaProduct.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -1186,12 +1259,13 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
                 baseSellingPrice: csaProduct.baseSellingPrice || itemData.rate * 1.2,
                 gstPercentage: csaProduct.gstPercentage,
                 currentStock: itemData.qty,
-                distributorId: distributorId
+                distributorId: actualDistributorId,
+                csaId: receiverCsaId
               }
             })
           } else {
-            distProduct = await tx.product.update({
-              where: { id: distProduct.id },
+            targetProduct = await tx.product.update({
+              where: { id: targetProduct.id },
               data: {
                 currentStock: { increment: itemData.qty },
                 costPrice: itemData.rate
@@ -1203,35 +1277,40 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
           await tx.purchaseItem.create({
             data: {
               purchaseId: purchaseLedger.id,
-              productId: distProduct.id,
+              productId: targetProduct.id,
               sortOrder: i,
               qty: itemData.qty,
               costPrice: itemData.rate,
               rate: itemData.rate,
               gstPercentage: itemData.gstPercentage,
               total: itemData.total,
-              distributorId: distributorId
+              distributorId: actualDistributorId,
+              csaId: receiverCsaId
             }
           })
         }
 
         // Update distributor financials for purchase debits
+        if (actualDistributorId) {
+          await tx.distributor.update({
+            where: { id: actualDistributorId },
+            data: {
+              totalCompanyDebits: { increment: grandTotal },
+              pendingCompanyBalance: { increment: grandTotal }
+            }
+          })
+        }
+      }
+
+      if (actualDistributorId) {
         await tx.distributor.update({
-          where: { id: distributorId },
+          where: { id: actualDistributorId },
           data: {
-            totalCompanyDebits: { increment: grandTotal },
-            pendingCompanyBalance: { increment: grandTotal }
+            totalAmountRealized: { increment: grandTotal },
+            pendingCompanyBalance: { decrement: grandTotal }
           }
         })
       }
-
-      await tx.distributor.update({
-        where: { id: distributorId },
-        data: {
-          totalAmountRealized: { increment: grandTotal },
-          pendingCompanyBalance: { decrement: grandTotal }
-        }
-      })
 
       return {
         ...invoice,
@@ -1561,21 +1640,22 @@ router.delete('/invoices/:id', authenticateToken, requireCSA, async (req, res) =
       }
 
       // Update distributor financials
-      await tx.distributor.update({
-        where: { id: existingInvoice.distributorId },
-        data: {
-          totalAmountRealized: { decrement: getNum(existingInvoice.grandTotal) },
-          pendingCompanyBalance: { increment: getNum(existingInvoice.grandTotal) }
-        }
-      })
+      if (existingInvoice.distributorId) {
+        await tx.distributor.update({
+          where: { id: existingInvoice.distributorId },
+          data: {
+            totalAmountRealized: { decrement: getNum(existingInvoice.grandTotal) },
+            pendingCompanyBalance: { increment: getNum(existingInvoice.grandTotal) }
+          }
+        })
+      }
 
       // --- AUTO DELETE PURCHASE LEDGER IF DIRECT TO DISTRIBUTOR ---
       if (existingInvoice.partyId === null) {
         const existingPurchase = await tx.purchaseLedger.findFirst({
-          where: {
-            invoiceNo: existingInvoice.invoiceNo,
-            distributorId: existingInvoice.distributorId
-          },
+          where: existingInvoice.receiverCsaId
+            ? { invoiceNo: existingInvoice.invoiceNo, csaId: existingInvoice.receiverCsaId }
+            : { invoiceNo: existingInvoice.invoiceNo, distributorId: existingInvoice.distributorId },
           include: { purchaseItems: true }
         })
 
@@ -1589,13 +1669,15 @@ router.delete('/invoices/:id', authenticateToken, requireCSA, async (req, res) =
           }
 
           // Subtract old grand total from distributor totalCompanyDebits and pendingCompanyBalance
-          await tx.distributor.update({
-            where: { id: existingInvoice.distributorId },
-            data: {
-              totalCompanyDebits: { decrement: getNum(existingInvoice.grandTotal) },
-              pendingCompanyBalance: { decrement: getNum(existingInvoice.grandTotal) }
-            }
-          })
+          if (existingInvoice.distributorId) {
+            await tx.distributor.update({
+              where: { id: existingInvoice.distributorId },
+              data: {
+                totalCompanyDebits: { decrement: getNum(existingInvoice.grandTotal) },
+                pendingCompanyBalance: { decrement: getNum(existingInvoice.grandTotal) }
+              }
+            })
+          }
 
           // Delete purchase items
           await tx.purchaseItem.deleteMany({
@@ -3143,8 +3225,26 @@ router.get('/my-suppliers', authenticateToken, requireCSA, async (req, res) => {
       orderBy: { createdAt: 'desc' }
     })
     
-    // Return full supplier objects so frontend can use their IDs
-    res.json(supplierRecords)
+    const otherCSAs = await prisma.user.findMany({
+      where: {
+        role: 'CSA',
+        id: { not: csaId }
+      },
+      select: {
+        id: true,
+        name: true,
+        gstin: true
+      }
+    })
+    
+    const formattedCSAs = otherCSAs.map(c => ({
+      id: c.id,
+      name: c.name || 'Unnamed CSA',
+      isCsa: true,
+      isNameOnly: true // Tells frontend NOT to send supplierId, avoiding foreign key constraint with Supplier table
+    }))
+    
+    res.json([...supplierRecords, ...formattedCSAs])
   } catch (error) {
     console.error('Error fetching suppliers:', error)
     res.status(500).json({ error: 'Failed to fetch suppliers' })

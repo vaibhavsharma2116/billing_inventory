@@ -194,6 +194,106 @@ router.put('/csas/:id', authenticateToken, requireSuperAdmin, async (req, res) =
   }
 })
 
+// Route to update an Admin
+router.put('/admins/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { name, email, password } = req.body
+
+    const existingAdmin = await prisma.user.findFirst({ 
+      where: { id, role: 'ADMIN' }
+    })
+
+    if (!existingAdmin) {
+      return res.status(404).json({ error: 'Admin not found' })
+    }
+
+    const updateData = {}
+    if (name) updateData.name = name
+    if (email) {
+      const existingUser = await prisma.user.findUnique({ where: { email } })
+      if (existingUser && existingUser.id !== id) {
+        return res.status(400).json({ error: 'Email already in use' })
+      }
+      updateData.email = email
+    }
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10)
+      updateData.password = hashedPassword
+    }
+
+    const updatedAdmin = await prisma.user.update({
+      where: { id },
+      data: updateData
+    })
+
+    res.json(convertDecimals(updatedAdmin))
+  } catch (error) {
+    console.error('Error updating Admin:', error)
+    res.status(500).json({ error: 'Failed to update Admin' })
+  }
+})
+
+// Route to update a Distributor
+router.put('/distributors/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { companyName, ownerName, email, phone, city, gstIn, password, adminId, csaId } = req.body
+
+    const existingDistributor = await prisma.distributor.findUnique({ 
+      where: { id },
+      include: { users: true }
+    })
+
+    if (!existingDistributor) {
+      return res.status(404).json({ error: 'Distributor not found' })
+    }
+
+    const updateData = {}
+    if (companyName) updateData.companyName = companyName
+    if (ownerName) updateData.ownerName = ownerName
+    if (email) {
+      const existingDistEmail = await prisma.distributor.findFirst({ where: { email } })
+      if (existingDistEmail && existingDistEmail.id !== id) {
+        return res.status(400).json({ error: 'Email already in use by another distributor' })
+      }
+      updateData.email = email
+    }
+    if (phone) updateData.phone = phone
+    if (city) updateData.city = city
+    if (gstIn) updateData.gstIn = gstIn
+    if (adminId !== undefined) updateData.adminId = adminId
+    if (csaId !== undefined) updateData.csaId = csaId
+
+    // Also update the linked user account
+    if (existingDistributor.users && existingDistributor.users.length > 0) {
+      const userId = existingDistributor.users[0].id
+      const userUpdateData = {}
+      if (ownerName) userUpdateData.name = ownerName
+      if (email) userUpdateData.email = email
+      if (password) {
+        const hashedPassword = await bcrypt.hash(password, 10)
+        userUpdateData.password = hashedPassword
+      }
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: userUpdateData
+      })
+    }
+
+    const updatedDistributor = await prisma.distributor.update({
+      where: { id },
+      data: updateData
+    })
+
+    res.json(convertDecimals(updatedDistributor))
+  } catch (error) {
+    console.error('Error updating Distributor:', error)
+    res.status(500).json({ error: 'Failed to update Distributor' })
+  }
+})
+
 // Route to get all CSAs
 router.get('/csas', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {

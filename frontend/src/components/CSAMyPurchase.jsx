@@ -244,6 +244,7 @@ function CSAMyPurchase() {
     try {
       setLoading(true)
       setError('')
+      setResult(null)
       const formData = new FormData()
       formData.append('file', file)
       if (selectedSupplier.name) {
@@ -312,7 +313,7 @@ function CSAMyPurchase() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchPurchases}
+            onClick={() => { fetchPurchases(); fetchSuppliers(); setResult(null); setError(''); setSelectedSupplier({ id: null, name: '' }); }}
             className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 md:px-6 py-2 rounded-lg font-medium transition flex items-center gap-2"
           >
             <RefreshCw size={20} />
