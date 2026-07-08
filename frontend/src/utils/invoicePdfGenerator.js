@@ -68,9 +68,12 @@ export const downloadInvoicePDF = (viewInvoice, user, isCSA = false) => {
   doc.setFont("helvetica", "normal");
   
   if (isCSA) {
+    const billToAddress = viewInvoice.distributor?.address ? `${viewInvoice.distributor.address}${viewInvoice.distributor.city ? ', ' + viewInvoice.distributor.city : ''}` : (viewInvoice.distributor?.city || '-');
+    
     doc.text(viewInvoice.distributor?.companyName || viewInvoice.distributor?.name || '-', 40, 155);
     doc.text(`GSTIN: ${viewInvoice.distributor?.gstIn || '-'}`, 40, 170);
     doc.text(`Mobile: ${viewInvoice.distributor?.phone || '-'}`, 40, 185);
+    doc.text(`Address: ${billToAddress}`, 40, 200);
 
     // Ship To
     doc.setFont("helvetica", "bold");
@@ -78,10 +81,14 @@ export const downloadInvoicePDF = (viewInvoice, user, isCSA = false) => {
     doc.setFont("helvetica", "normal");
     doc.text(viewInvoice.distributor?.companyName || viewInvoice.distributor?.name || '-', doc.internal.pageSize.width / 2 + 20, 155);
     doc.text(`GSTIN: ${viewInvoice.distributor?.gstIn || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
+    doc.text(`Address: ${billToAddress}`, doc.internal.pageSize.width / 2 + 20, 185);
   } else {
+    const billToAddress = viewInvoice.party?.address ? `${viewInvoice.party.address}${viewInvoice.party.city ? ', ' + viewInvoice.party.city : ''}` : (viewInvoice.party?.city || '-');
+
     doc.text(viewInvoice.party?.name || '-', 40, 155);
     doc.text(`GSTIN: ${viewInvoice.party?.gstin || '-'}`, 40, 170);
     doc.text(`Mobile: ${viewInvoice.party?.phone || '-'}`, 40, 185);
+    doc.text(`Address: ${billToAddress}`, 40, 200);
 
     // Ship To
     doc.setFont("helvetica", "bold");
@@ -89,6 +96,7 @@ export const downloadInvoicePDF = (viewInvoice, user, isCSA = false) => {
     doc.setFont("helvetica", "normal");
     doc.text(viewInvoice.party?.name || '-', doc.internal.pageSize.width / 2 + 20, 155);
     doc.text(`GSTIN: ${viewInvoice.party?.gstin || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
+    doc.text(`Address: ${billToAddress}`, doc.internal.pageSize.width / 2 + 20, 185);
   }
 
   // Items table

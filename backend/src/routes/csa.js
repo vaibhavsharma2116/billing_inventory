@@ -977,8 +977,8 @@ router.get('/invoices/my', authenticateToken, requireCSA, async (req, res) => {
       include: { 
         party: true, 
         invoiceItems: { include: { product: true } },
-        distributor: { select: { id: true, companyName: true, gstIn: true, phone: true } },
-        receiverCsa: { select: { id: true, name: true, gstin: true, phone: true } }
+        distributor: { select: { id: true, companyName: true, gstIn: true, phone: true, city: true } },
+        receiverCsa: { select: { id: true, name: true, gstin: true, phone: true, city: true } }
       },
       orderBy: { createdAt: 'desc' }
     })
@@ -992,7 +992,8 @@ router.get('/invoices/my', authenticateToken, requireCSA, async (req, res) => {
             distributorId: inv.receiverCsa.id,
             companyName: inv.receiverCsa.name + ' (CSA)',
             gstIn: inv.receiverCsa.gstin,
-            phone: inv.receiverCsa.phone
+            phone: inv.receiverCsa.phone,
+            city: inv.receiverCsa.city
           }
         }
       }
@@ -1217,7 +1218,12 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
             create: invoiceItemsData
           }
         },
-        include: { party: true, distributor: true, invoiceItems: { include: { product: true } } }
+        include: { 
+          party: true, 
+          distributor: true, 
+          invoiceItems: { include: { product: true } },
+          receiverCsa: { select: { id: true, name: true, gstin: true, phone: true, city: true } }
+        }
       })
 
       // --- AUTO GENERATE PURCHASE LEDGER IF DIRECT TO DISTRIBUTOR ---
@@ -1312,8 +1318,23 @@ router.post('/distributors/:distributorId/invoices/create', authenticateToken, r
         })
       }
 
+      let finalInvoice = invoice
+      if (invoice.receiverCsa) {
+        finalInvoice = {
+          ...invoice,
+          distributor: {
+            id: invoice.receiverCsa.id,
+            distributorId: invoice.receiverCsa.id,
+            companyName: invoice.receiverCsa.name + ' (CSA)',
+            gstIn: invoice.receiverCsa.gstin,
+            phone: invoice.receiverCsa.phone,
+            city: invoice.receiverCsa.city
+          }
+        }
+      }
+
       return {
-        ...invoice,
+        ...finalInvoice,
         invoiceStockCost,
         invoiceProfit,
         profitStatus
@@ -1334,7 +1355,11 @@ router.get('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
     const csaId = req.user.userId
     const invoice = await prisma.invoice.findUnique({
       where: { id },
-      include: { distributor: true, invoiceItems: { include: { product: true } } }
+      include: { 
+        distributor: true, 
+        invoiceItems: { include: { product: true } },
+        receiverCsa: { select: { id: true, name: true, gstin: true, phone: true, city: true } }
+      }
     })
 
     if (!invoice) {
@@ -1345,7 +1370,22 @@ router.get('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' })
     }
 
-    res.json(convertDecimals(invoice))
+    let finalInvoice = invoice
+    if (invoice.receiverCsa) {
+      finalInvoice = {
+        ...invoice,
+        distributor: {
+          id: invoice.receiverCsa.id,
+          distributorId: invoice.receiverCsa.id,
+          companyName: invoice.receiverCsa.name + ' (CSA)',
+          gstIn: invoice.receiverCsa.gstin,
+          phone: invoice.receiverCsa.phone,
+          city: invoice.receiverCsa.city
+        }
+      }
+    }
+
+    res.json(convertDecimals(finalInvoice))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Failed to fetch invoice' })

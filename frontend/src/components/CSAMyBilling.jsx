@@ -390,10 +390,16 @@ function CSAMyBilling() {
           </div>
 
           {selectedDistributor && (
-            <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase">Company Name</label>
                 <p className="font-medium text-gray-800">{typeof selectedDistributor.companyName === 'string' ? selectedDistributor.companyName : '-'}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Address</label>
+                <p className="font-medium text-gray-800 line-clamp-2">
+                  {selectedDistributor.address ? `${selectedDistributor.address}${selectedDistributor.city ? ', ' + selectedDistributor.city : ''}` : (selectedDistributor.city || '-')}
+                </p>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN</label>

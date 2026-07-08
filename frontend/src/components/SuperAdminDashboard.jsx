@@ -1961,13 +1961,13 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
                 <input
                   type="text"
                   value={csaForm.city}
                   onChange={(e) => setCsaForm({ ...csaForm, city: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  placeholder="Enter city"
+                  placeholder="Enter address"
                 />
               </div>
               <div>
@@ -2647,7 +2647,7 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
                   <input
                     type="text"
                     value={editCsaForm.city}

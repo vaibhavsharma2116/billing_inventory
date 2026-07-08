@@ -235,6 +235,8 @@ function CSAMyInvoices() {
     doc.text(`Invoice No: ${invoiceToPrint.invoiceNo}`, 40, 110);
     doc.text(`Invoice Date: ${new Date(invoiceToPrint.createdAt).toLocaleDateString()}`, 200, 110);
     
+    const billToAddress = invoiceToPrint.distributor?.address ? `${invoiceToPrint.distributor.address}${invoiceToPrint.distributor.city ? ', ' + invoiceToPrint.distributor.city : ''}` : (invoiceToPrint.distributor?.city || '-');
+
     // Bill To
     doc.setFont("helvetica", "bold");
     doc.text("Bill To:", 40, 140);
@@ -242,6 +244,7 @@ function CSAMyInvoices() {
     doc.text(invoiceToPrint.distributor?.companyName || '-', 40, 155);
     doc.text(`GSTIN: ${invoiceToPrint.distributor?.gstIn || '-'}`, 40, 170);
     doc.text(`Mobile: ${invoiceToPrint.distributor?.phone || '-'}`, 40, 185);
+    doc.text(`Address: ${billToAddress}`, 40, 200);
 
     // Ship To
     doc.setFont("helvetica", "bold");
@@ -249,6 +252,8 @@ function CSAMyInvoices() {
     doc.setFont("helvetica", "normal");
     doc.text(invoiceToPrint.distributor?.companyName || '-', doc.internal.pageSize.width / 2 + 20, 155);
     doc.text(`GSTIN: ${invoiceToPrint.distributor?.gstIn || '-'}`, doc.internal.pageSize.width / 2 + 20, 170);
+    doc.text(`Mobile: ${invoiceToPrint.distributor?.phone || '-'}`, doc.internal.pageSize.width / 2 + 20, 185);
+    doc.text(`Address: ${billToAddress}`, doc.internal.pageSize.width / 2 + 20, 200);
 
     // Items table
     const tableColumn = ["No", "Product", "HSN No.", "MRP", "Qty", "Rate", "Margin %", "Taxable", "GST %", "Total"];
@@ -501,6 +506,7 @@ function CSAMyInvoices() {
                   <div className="bg-gray-50 rounded-xl p-4">
                     <h3 className="text-sm font-semibold text-gray-600 uppercase mb-3">Distributor</h3>
                     <p className="font-medium text-gray-800">{viewInvoice.distributor?.companyName || '-'}</p>
+                    {viewInvoice.distributor?.city && <p className="text-sm text-gray-600">Address: {viewInvoice.distributor.address ? `${viewInvoice.distributor.address}, ` : ''}{viewInvoice.distributor.city}</p>}
                     {viewInvoice.distributor?.gstIn && <p className="text-sm text-gray-600">GSTIN: {viewInvoice.distributor.gstIn}</p>}
                     {viewInvoice.distributor?.phone && <p className="text-sm text-gray-600">Phone: {viewInvoice.distributor.phone}</p>}
                   </div>
@@ -637,7 +643,8 @@ function CSAMyInvoices() {
                     <h3 className="font-bold text-[#cda84f] uppercase tracking-wider mb-2 text-[10px]">Bill To</h3>
                     <p className="font-extrabold text-sm text-[#1a2e40] mb-1">{viewInvoice.distributor?.companyName || '-'}</p>
                     <p className="text-gray-600 font-semibold mb-1">
-                      {viewInvoice.distributor?.city ? `${viewInvoice.distributor.city}, Maharashtra, 411041` : 'Pune, Maharashtra, 411041'}
+                      {viewInvoice.distributor?.address ? `${viewInvoice.distributor.address}, ` : ''}
+                      {viewInvoice.distributor?.city ? `${viewInvoice.distributor.city}, Maharashtra` : 'Maharashtra'}
                     </p>
                     <div className="space-y-0.5 text-gray-700">
                       <p><span className="font-bold text-gray-500">Mobile:</span> {viewInvoice.distributor?.phone || '-'}</p>
@@ -650,7 +657,8 @@ function CSAMyInvoices() {
                     <h3 className="font-bold text-[#cda84f] uppercase tracking-wider mb-2 text-[10px]">Ship To</h3>
                     <p className="font-extrabold text-sm text-[#1a2e40] mb-1">{viewInvoice.distributor?.companyName || '-'}</p>
                     <p className="text-gray-600 font-semibold mb-1">
-                      {viewInvoice.distributor?.city ? `${viewInvoice.distributor.city}, Maharashtra, 411041` : 'Pune, Maharashtra, 411041'}
+                      {viewInvoice.distributor?.address ? `${viewInvoice.distributor.address}, ` : ''}
+                      {viewInvoice.distributor?.city ? `${viewInvoice.distributor.city}, Maharashtra` : 'Maharashtra'}
                     </p>
                     <div className="space-y-0.5 text-gray-700">
                       <p><span className="font-bold text-gray-500">Mobile:</span> {viewInvoice.distributor?.phone || '-'}</p>
