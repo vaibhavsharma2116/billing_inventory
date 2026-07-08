@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Building2, IndianRupee, AlertCircle, TrendingUp, Ban, CheckCircle2, Plus, X, Eye, Key, PieChart as PieChartIcon, BarChart3, Download, Package, Users, RefreshCw, CreditCard, Shield } from 'lucide-react'
+import { Building2, IndianRupee, AlertCircle, TrendingUp, Ban, CheckCircle2, Plus, X, Eye, Key, PieChart as PieChartIcon, BarChart3, Download, Package, Users, RefreshCw, CreditCard, Shield, Edit } from 'lucide-react'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js'
 import { Bar, Pie } from 'react-chartjs-2'
 
@@ -2137,15 +2137,16 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                 <tr key={admin.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-semibold">{admin.name}</td>
                   <td className="px-6 py-4">{admin.email}</td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right flex justify-end gap-2">
                     <button
                       onClick={() => {
                         setEditingAdmin(admin)
                         setEditAdminForm({ name: admin.name, email: admin.email, password: '' })
                       }}
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100"
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100 transition-all flex items-center"
+                      title="Edit"
                     >
-                      Edit
+                      <Edit size={18} />
                     </button>
                   </td>
                 </tr>
@@ -2188,9 +2189,52 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                     <td className="px-6 py-4 text-right flex justify-end gap-2">
                       <button
                         onClick={() => navigate(`/superadmin/csa/${csa.id}`)}
-                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all flex items-center"
+                        title="View"
                       >
-                        View
+                        <Eye size={18} />
+                      </button>
+                      <button
+                        onClick={() => downloadCsaReport(csa)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-all flex items-center"
+                        title="Download Report"
+                      >
+                        <Download size={18} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedCsa(csa)
+                          setShowCsaPasswordModal(true)
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 transition-all flex items-center"
+                        title="Change Password"
+                      >
+                        <Key size={18} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setChangingAdminCsa(csa)
+                          setNewAdminId(csa.adminId || '')
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-yellow-50 text-yellow-700 hover:bg-yellow-100 transition-all flex items-center"
+                        title="Change Admin"
+                      >
+                        <Users size={18} />
+                      </button>
+                      <button
+                        onClick={() => toggleCsaStatus(csa.id, csa.isActive !== false)}
+                        disabled={togglingCsaId === csa.id}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center ${
+                          csa?.isActive !== false
+                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                            : 'bg-green-50 text-green-600 hover:bg-green-100'
+                        }`}
+                        title={csa?.isActive !== false ? 'Suspend CSA' : 'Activate CSA'}
+                      >
+                        {togglingCsaId === csa.id 
+                          ? '...' 
+                          : (csa?.isActive !== false ? <Ban size={18} /> : <CheckCircle2 size={18} />)
+                        }
                       </button>
                       <button
                         onClick={() => {
@@ -2205,9 +2249,10 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                             password: ''
                           })
                         }}
-                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100"
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100 transition-all flex items-center"
+                        title="Edit"
                       >
-                        Edit
+                        <Edit size={18} />
                       </button>
                     </td>
                   </tr>
@@ -2255,9 +2300,62 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                     <td className="px-6 py-4 text-right flex justify-end gap-2">
                       <button
                         onClick={() => navigate(`/superadmin/distributor/${dist.distributorId || dist.id}`)}
-                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all flex items-center"
+                        title="View"
                       >
-                        View
+                        <Eye size={18} />
+                      </button>
+                      <button
+                        onClick={() => downloadDistributorReport(dist)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-all flex items-center"
+                        title="Download Report"
+                      >
+                        <Download size={18} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedDistributor(dist)
+                          setShowPasswordModal(true)
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 transition-all flex items-center"
+                        title="Change Password"
+                      >
+                        <Key size={18} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setChangingAdminDistributor(dist)
+                          setNewAdminId(dist.adminId || '')
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-yellow-50 text-yellow-700 hover:bg-yellow-100 transition-all flex items-center"
+                        title="Change Admin"
+                      >
+                        <Users size={18} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setChangingCsaDistributor(dist)
+                          setNewCsaId(dist.csaId || '')
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-orange-50 text-orange-700 hover:bg-orange-100 transition-all flex items-center"
+                        title="Change CSA"
+                      >
+                        <Users size={18} />
+                      </button>
+                      <button
+                        onClick={() => toggleDistributorStatus(dist.distributorId || dist.id, dist.isActive !== false)}
+                        disabled={togglingId === (dist.distributorId || dist.id)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center ${
+                          dist.isActive !== false
+                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                            : 'bg-green-50 text-green-600 hover:bg-green-100'
+                        }`}
+                        title={dist.isActive !== false ? 'Suspend Distributor' : 'Activate Distributor'}
+                      >
+                        {togglingId === (dist.distributorId || dist.id) 
+                          ? '...' 
+                          : (dist.isActive !== false ? <Ban size={18} /> : <CheckCircle2 size={18} />)
+                        }
                       </button>
                       <button
                         onClick={() => {
@@ -2274,9 +2372,10 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
                             csaId: dist.csaId || ''
                           })
                         }}
-                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100"
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cyan-50 text-cyan-600 hover:bg-cyan-100 transition-all flex items-center"
+                        title="Edit"
                       >
-                        Edit
+                        <Edit size={18} />
                       </button>
                     </td>
                   </tr>
