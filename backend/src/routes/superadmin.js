@@ -1261,31 +1261,58 @@ router.get('/reports/admin-performance', authenticateToken, requireSuperAdmin, a
       let activeDistributorCount = 0
       let totalInvoices = 0
 
+      const csaIds = admin.managedCSAs.map(c => c.id)
+      const distIds = adminDistributors.map(d => d.id)
+
+      const salesAgg = await prisma.invoice.aggregate({
+        where: {
+          OR: [
+            { csaId: { in: csaIds } },
+            { distributorId: { in: distIds }, csaId: null }
+          ],
+          date: whereDateRange
+        },
+        _sum: { grandTotal: true }
+      })
+      const salesReturnsAgg = await prisma.salesReturn.aggregate({
+        where: {
+          OR: [
+            { csaId: { in: csaIds } },
+            { distributorId: { in: distIds }, csaId: null }
+          ],
+          date: whereDateRange
+        },
+        _sum: { grandTotal: true }
+      })
+      const paymentsAgg = await prisma.paymentIn.aggregate({
+        where: {
+          OR: [
+            { csaId: { in: csaIds } },
+            { distributorId: { in: distIds }, csaId: null }
+          ],
+          date: whereDateRange
+        },
+        _sum: { amount: true }
+      })
+      const invCount = await prisma.invoice.count({
+        where: {
+          OR: [
+            { csaId: { in: csaIds } },
+            { distributorId: { in: distIds }, csaId: null }
+          ],
+          date: whereDateRange
+        }
+      })
+
       for (const dist of adminDistributors) {
         distributorCount++
         if (dist.isActive) activeDistributorCount++
-
-        const salesAgg = await prisma.invoice.aggregate({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange },
-          _sum: { grandTotal: true }
-        })
-        const salesReturnsAgg = await prisma.salesReturn.aggregate({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange },
-          _sum: { grandTotal: true }
-        })
-        const paymentsAgg = await prisma.paymentIn.aggregate({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange },
-          _sum: { amount: true }
-        })
-        const invCount = await prisma.invoice.count({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange }
-        })
-
-        totalSales += getNum(salesAgg._sum.grandTotal) || 0
-        totalSalesReturns += getNum(salesReturnsAgg._sum.grandTotal) || 0
-        totalPaymentsReceived += getNum(paymentsAgg._sum.amount) || 0
-        totalInvoices += invCount
       }
+
+      totalSales = getNum(salesAgg._sum.grandTotal) || 0
+      totalSalesReturns = getNum(salesReturnsAgg._sum.grandTotal) || 0
+      totalPaymentsReceived = getNum(paymentsAgg._sum.amount) || 0
+      totalInvoices = invCount
 
       totalRevenue = totalSales - totalSalesReturns
 
@@ -1347,31 +1374,31 @@ router.get('/reports/csa-performance', authenticateToken, requireSuperAdmin, asy
       let activeDistributorCount = 0
       let totalInvoices = 0
 
+      const salesAgg = await prisma.invoice.aggregate({
+        where: { csaId: csa.id, date: whereDateRange },
+        _sum: { grandTotal: true }
+      })
+      const salesReturnsAgg = await prisma.salesReturn.aggregate({
+        where: { csaId: csa.id, date: whereDateRange },
+        _sum: { grandTotal: true }
+      })
+      const paymentsAgg = await prisma.paymentIn.aggregate({
+        where: { csaId: csa.id, date: whereDateRange },
+        _sum: { amount: true }
+      })
+      const invCount = await prisma.invoice.count({
+        where: { csaId: csa.id, date: whereDateRange }
+      })
+
       for (const dist of csa.managedCsaDistributors) {
         distributorCount++
         if (dist.isActive) activeDistributorCount++
-
-        const salesAgg = await prisma.invoice.aggregate({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange },
-          _sum: { grandTotal: true }
-        })
-        const salesReturnsAgg = await prisma.salesReturn.aggregate({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange },
-          _sum: { grandTotal: true }
-        })
-        const paymentsAgg = await prisma.paymentIn.aggregate({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange },
-          _sum: { amount: true }
-        })
-        const invCount = await prisma.invoice.count({
-          where: { distributorId: dist.id, csaId: null, date: whereDateRange }
-        })
-
-        totalSales += getNum(salesAgg._sum.grandTotal) || 0
-        totalSalesReturns += getNum(salesReturnsAgg._sum.grandTotal) || 0
-        totalPaymentsReceived += getNum(paymentsAgg._sum.amount) || 0
-        totalInvoices += invCount
       }
+
+      totalSales = getNum(salesAgg._sum.grandTotal) || 0
+      totalSalesReturns = getNum(salesReturnsAgg._sum.grandTotal) || 0
+      totalPaymentsReceived = getNum(paymentsAgg._sum.amount) || 0
+      totalInvoices = invCount
 
       totalRevenue = totalSales - totalSalesReturns
 

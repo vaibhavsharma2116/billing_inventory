@@ -2885,17 +2885,24 @@ router.get('/my-reports/party-product-sales/:partyId', authenticateToken, requir
       dateFilter.lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
     }
 
-    const distributor = await prisma.distributor.findFirst({ 
+    let party = await prisma.distributor.findFirst({ 
       where: { id: partyId, csaId }
     })
-    if (!distributor) {
-      return res.status(404).json({ error: 'Distributor not found' })
+    let isCsa = false
+    if (!party) {
+      party = await prisma.user.findFirst({ where: { id: partyId, role: 'CSA' } })
+      if (!party) {
+        return res.status(404).json({ error: 'Party not found' })
+      }
+      isCsa = true
     }
+
+    const partyFilter = isCsa ? { receiverCsaId: partyId } : { distributorId: partyId }
 
     const invoiceItems = await prisma.invoiceItem.findMany({
       where: {
         invoice: {
-          distributorId: partyId,
+          ...partyFilter,
           date: dateFilter
         }
       },
@@ -2906,7 +2913,7 @@ router.get('/my-reports/party-product-sales/:partyId', authenticateToken, requir
       orderBy: { invoice: { date: 'desc' } }
     })
 
-    const salesReturnItems = await prisma.salesReturnItem.findMany({
+    const salesReturnItems = isCsa ? [] : await prisma.salesReturnItem.findMany({
       where: {
         salesReturn: {
           distributorId: partyId,
@@ -2981,13 +2988,20 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     const { partyId } = req.params
     const { startDate, endDate } = req.query
     const csaId = req.user.userId
-    
-    const distributor = await prisma.distributor.findFirst({ 
+
+    let party = await prisma.distributor.findFirst({ 
       where: { id: partyId, csaId }
     })
-    if (!distributor) {
-      return res.status(404).json({ error: 'Distributor not found' })
+    let isCsa = false
+    if (!party) {
+      party = await prisma.user.findFirst({ where: { id: partyId, role: 'CSA' } })
+      if (!party) {
+        return res.status(404).json({ error: 'Party not found' })
+      }
+      isCsa = true
     }
+
+    const partyFilter = isCsa ? { receiverCsaId: partyId } : { distributorId: partyId }
 
     let start, end
     if (startDate) {
@@ -3008,19 +3022,19 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     const [invoices, salesReturns, paymentsIn, openingInvoices, openingSalesReturns, openingPaymentsIn] = await Promise.all([
       prisma.invoice.findMany({
         where: { 
-          distributorId: partyId,
+          ...partyFilter,
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
       }),
-      prisma.salesReturn.findMany({
+      isCsa ? Promise.resolve([]) : prisma.salesReturn.findMany({
         where: { 
           distributorId: partyId,
           date: { gte: start, lte: end }
         },
         orderBy: { date: 'asc' }
       }),
-      prisma.paymentIn.findMany({
+      isCsa ? Promise.resolve([]) : prisma.paymentIn.findMany({
         where: { 
           distributorId: partyId,
           date: { gte: start, lte: end }
@@ -3029,19 +3043,19 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
       }),
       prisma.invoice.findMany({
         where: {
-          distributorId: partyId,
+          ...partyFilter,
           date: { lt: start }
         },
         orderBy: { date: 'asc' }
       }),
-      prisma.salesReturn.findMany({
+      isCsa ? Promise.resolve([]) : prisma.salesReturn.findMany({
         where: {
           distributorId: partyId,
           date: { lt: start }
         },
         orderBy: { date: 'asc' }
       }),
-      prisma.paymentIn.findMany({
+      isCsa ? Promise.resolve([]) : prisma.paymentIn.findMany({
         where: {
           distributorId: partyId,
           date: { lt: start }
