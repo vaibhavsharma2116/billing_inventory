@@ -2655,7 +2655,39 @@ router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req,
       }
     }))
 
-    res.json(convertDecimals(distributorsWithStats.sort((a, b) => b.totalBilling - a.totalBilling)))
+    const csaInvoices = await prisma.invoice.findMany({
+      where: {
+        csaId,
+        receiverCsaId: { not: null },
+        date: dateFilter
+      },
+      include: {
+        receiverCsa: true
+      }
+    })
+
+    const csaPartiesMap = new Map()
+    csaInvoices.forEach(inv => {
+      if (!inv.receiverCsa) return
+      if (!csaPartiesMap.has(inv.receiverCsaId)) {
+        csaPartiesMap.set(inv.receiverCsaId, {
+          partyId: inv.receiverCsaId,
+          partyName: inv.receiverCsa.name,
+          gstin: inv.receiverCsa.gstIn || '',
+          phone: inv.receiverCsa.phone || '',
+          totalBilling: 0,
+          invoiceCount: 0
+        })
+      }
+      const p = csaPartiesMap.get(inv.receiverCsaId)
+      p.totalBilling += getNum(inv.grandTotal)
+      p.invoiceCount += 1
+    })
+
+    const csaStats = Array.from(csaPartiesMap.values())
+    const allStats = [...distributorsWithStats, ...csaStats].sort((a, b) => b.totalBilling - a.totalBilling)
+
+    res.json(convertDecimals(allStats))
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Failed to fetch party sales' })
@@ -3153,7 +3185,7 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     const closingBalance = openingBalance + periodNet
 
     res.json(convertDecimals({
-      party: distributor,
+      party,
       ledgerEntries,
       summary: {
         openingBalance,
@@ -3169,7 +3201,7 @@ router.get('/my-reports/party-ledger/:partyId', authenticateToken, requireCSA, a
     }))
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Failed to fetch party ledger' })
+    res.status(500).json({ error: 'Failed to fetch party ledger', message: error.message, stack: error.stack })
   }
 })
 
@@ -4863,7 +4895,7 @@ router.get('/my-parties', authenticateToken, requireCSA, async (req, res) => {
     res.json(convertDecimals(parties))
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Failed to fetch parties' })
+    res.status(500).json({ error: 'Failed to fetch parties', message: error.message, stack: error.stack })
   }
 })
 

@@ -305,11 +305,11 @@ function CSAReports() {
       <div className="mb-6 border-b border-gray-200 overflow-x-auto">
         <div className="flex gap-1 min-w-max">
           {[
-            { id: 'party-sales', label: 'Distributor-wise Sales' },
+            { id: 'party-sales', label: 'Party-wise Sales (Distributors & CSAs)' },
             { id: 'product-sales', label: 'Product-wise Sales' },
-            { id: 'party-product', label: 'Distributor-wise Product Sales' },
+            { id: 'party-product', label: 'Party-wise Product Sales' },
             { id: 'inventory', label: 'Inventory Valuation' },
-            { id: 'party-ledger', label: 'Distributor Ledger' }
+            { id: 'party-ledger', label: 'Party Ledger' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -335,13 +335,13 @@ function CSAReports() {
       {activeTab === 'party-sales' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-4 md:px-6 py-4 border-b border-gray-200">
-            <h2 className="text-base md:text-lg font-semibold text-gray-800">Distributor-wise Sales Report</h2>
+            <h2 className="text-base md:text-lg font-semibold text-gray-800">Party-wise Sales Report</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[600px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Distributor Name</th>
+                  <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Party Name</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">GSTIN</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
                   <th className="px-4 md:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Invoices</th>
@@ -407,13 +407,13 @@ function CSAReports() {
       {activeTab === 'party-product' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
-            <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Distributor</h2>
+            <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Party</h2>
             <select
               value={selectedParty?.id || ''}
               onChange={(e) => handlePartySelect(parties.find(p => p.id === e.target.value))}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">-- Select a Distributor --</option>
+              <option value="">-- Select a Party --</option>
               {parties.map(p => (
                 <option key={p.id} value={p.id}>{p.companyName}</option>
               ))}
@@ -530,14 +530,14 @@ function CSAReports() {
         <div className="space-y-6">
           {/* Distributor Selection & Date Range */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
-            <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Distributor</h2>
+            <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-4">Select Party</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <select
                 value={selectedParty?.id || ''}
                 onChange={(e) => handlePartySelect(parties.find(p => p.id === e.target.value))}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">-- Select a Distributor --</option>
+                <option value="">-- Select a Party --</option>
                 {parties.map(p => (
                   <option key={p.id} value={p.id}>{p.companyName}</option>
                 ))}
