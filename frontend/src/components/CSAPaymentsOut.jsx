@@ -1,10 +1,11 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 
@@ -41,7 +42,7 @@ function CSAPaymentsOut() {
       if (res.ok) {
         const data = await res.json()
         setDistributors(data || [])
-        const savedId = localStorage.getItem('csaDistributorId')
+        const savedId = storage.getItem('csaDistributorId')
         if (savedId) {
           const found = data.find(d => d.distributorId === savedId || d.id === savedId)
           if (found) {
@@ -57,7 +58,7 @@ function CSAPaymentsOut() {
   const selectDistributor = async (dist) => {
     const distId = dist.distributorId || dist.id
     setSelectedDistributor(dist)
-    localStorage.setItem('csaDistributorId', distId)
+    storage.setItem('csaDistributorId', distId)
     setShowDistributorDropdown(false)
   }
 

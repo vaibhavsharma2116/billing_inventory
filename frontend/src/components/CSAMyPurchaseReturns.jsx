@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { Eye, Download } from 'lucide-react'
 import { downloadReturnPDF } from '../utils/returnPdfGenerator'
@@ -6,7 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27'
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 

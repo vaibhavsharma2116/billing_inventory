@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, Building2, ArrowRight, Calendar, Download, Users, Package, IndianRupee, RefreshCw, CreditCard, BarChart3, PieChart as PieChartIcon } from 'lucide-react'
@@ -18,7 +19,7 @@ const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => ({
   'Content-Type': 'application/json',
-  'Authorization': `Bearer ${localStorage.getItem('token')}`
+  'Authorization': `Bearer ${storage.getItem('token')}`
 })
 
 const formatDate = (dateString) => {

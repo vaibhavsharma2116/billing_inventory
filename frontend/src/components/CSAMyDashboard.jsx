@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Package, Users, FileText, RefreshCw, CreditCard, IndianRupee, ArrowLeftCircle, ArrowRightCircle } from 'lucide-react'
@@ -30,7 +31,7 @@ ChartJS.register(
 const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 
@@ -54,7 +55,7 @@ function CSAMyDashboard() {
   const [claims, setClaims] = useState([])
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user')
+    const storedUser = storage.getItem('user')
     if (storedUser) {
       const user = JSON.parse(storedUser)
       setUserName(user.name || 'Admin User')

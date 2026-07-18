@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Users, Package, IndianRupee, FileText, Download, AlertCircle, RefreshCw, CreditCard, ArrowLeftCircle, ArrowRightCircle, Building2, Calendar } from 'lucide-react'
@@ -5,7 +6,7 @@ import { Users, Package, IndianRupee, FileText, Download, AlertCircle, RefreshCw
 const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 

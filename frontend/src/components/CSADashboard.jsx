@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, Building2, ArrowRight, Calendar, Download, Users, Package, IndianRupee, RefreshCw, CreditCard, BarChart3, PieChart as PieChartIcon } from 'lucide-react'
@@ -18,7 +19,7 @@ const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => ({
   'Content-Type': 'application/json',
-  'Authorization': `Bearer ${localStorage.getItem('token')}`
+  'Authorization': `Bearer ${storage.getItem('token')}`
 })
 
 const formatDate = (dateString) => {
@@ -478,7 +479,7 @@ export default function CSADashboard({ view = 'dashboard' }) {
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <button
                             onClick={() => {
-                              localStorage.setItem('csaDistributorId', distributor.distributorId)
+                              storage.setItem('csaDistributorId', distributor.distributorId)
                               viewDistributorDetails(distributor.distributorId)
                             }}
                             className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-600 text-white rounded-lg hover:from-cyan-600 hover:to-teal-700 transition-all text-sm font-medium shadow-md hover:shadow-lg"

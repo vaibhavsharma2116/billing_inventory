@@ -48,7 +48,8 @@ function CSAMyBilling() {
   useEffect(() => {
     // If we have invoice data and distributors are loaded, set the distributor and items
     if (invoiceData && distributors.length > 0 && !selectedDistributor) {
-      const distributor = distributors.find(d => d.distributorId === invoiceData.distributorId)
+      const targetId = invoiceData.distributor?.id || invoiceData.distributorId;
+      const distributor = distributors.find(d => d.distributorId === targetId || d.id === targetId)
       if (distributor) {
         selectDistributor(distributor, true)
       }

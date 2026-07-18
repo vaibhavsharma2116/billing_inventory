@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Rocket } from 'lucide-react'
@@ -31,13 +32,13 @@ function Login() {
 
       console.log('Login successful:', data)
       try {
-        localStorage.setItem('token', data.token)
-        localStorage.setItem('user', JSON.stringify(data.user))
-        console.log('Token stored:', localStorage.getItem('token'))
-        console.log('User stored:', localStorage.getItem('user'))
+        storage.setItem('token', data.token)
+        storage.setItem('user', JSON.stringify(data.user))
+        console.log('Token stored:', storage.getItem('token'))
+        console.log('User stored:', storage.getItem('user'))
       } catch (e) {
         console.error('localStorage error:', e)
-        throw new Error('Browser storage access denied. Please enable cookies/localStorage.')
+        throw new Error('Browser storage access denied. Please enable cookies/storage.')
       }
 
       if (data.user.role === 'SUPER_ADMIN') {

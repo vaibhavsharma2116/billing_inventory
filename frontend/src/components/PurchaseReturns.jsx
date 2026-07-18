@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { Eye, Download, X } from 'lucide-react'
 import { downloadReturnPDF } from '../utils/returnPdfGenerator'
@@ -7,7 +8,7 @@ const PURCHASE_API_URL = `${API_URL}/purchase`
 const DISTRIBUTOR_STATE_CODE = '27'
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 

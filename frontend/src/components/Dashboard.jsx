@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Users, Package, IndianRupee, AlertCircle, RefreshCw, CreditCard, ArrowLeftCircle, ArrowRightCircle } from 'lucide-react'
@@ -48,12 +49,12 @@ function Dashboard() {
   const [allParties, setAllParties] = useState([]) // Store all parties for reference
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token')
+    const token = storage.getItem('token')
     return token ? { 'Authorization': `Bearer ${token}` } : {}
   }
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user')
+    const storedUser = storage.getItem('user')
     if (storedUser) {
       const user = JSON.parse(storedUser)
       setUserName(user.name || 'Admin User')

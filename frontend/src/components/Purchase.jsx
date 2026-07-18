@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { Plus, X, Eye, Download, Trash2, Edit2 } from 'lucide-react'
 
@@ -6,7 +7,7 @@ const PURCHASE_API_URL = `${API_URL}/purchase`
 const PRODUCTS_API_URL = `${API_URL}/products`
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 

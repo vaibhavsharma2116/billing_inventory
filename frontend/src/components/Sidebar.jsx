@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
@@ -47,7 +48,7 @@ const Sidebar = () => {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user')
+    const storedUser = storage.getItem('user')
     if (storedUser) {
       const user = JSON.parse(storedUser)
       setCurrentUser(user)
@@ -58,8 +59,8 @@ const Sidebar = () => {
   }, [])
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+    storage.removeItem('token')
+    storage.removeItem('user')
     navigate('/login')
   }
 
@@ -96,7 +97,7 @@ const Sidebar = () => {
         method: 'PUT',
         body: formData,
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${storage.getItem('token')}`
         }
       })
       
@@ -105,7 +106,7 @@ const Sidebar = () => {
       if (res.ok) {
         const updatedUser = await res.json()
         console.log('Updated user from server:', updatedUser)
-        localStorage.setItem('user', JSON.stringify(updatedUser))
+        storage.setItem('user', JSON.stringify(updatedUser))
         setCurrentUser(updatedUser)
         
         if (updatedUser.logo) {
@@ -145,7 +146,7 @@ const Sidebar = () => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${storage.getItem('token')}`
         },
         body: JSON.stringify({
           oldPassword: passwordForm.oldPassword,

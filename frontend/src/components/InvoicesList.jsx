@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Edit2, Eye, X, RefreshCw, Printer, Download, Search } from 'lucide-react'
@@ -6,7 +7,7 @@ import { downloadInvoicePDF } from '../utils/invoicePdfGenerator'
 const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 
@@ -39,7 +40,7 @@ function InvoicesList() {
 
   const [parties, setParties] = useState([])
   const [user, setUser] = useState(() => {
-    const userStr = localStorage.getItem('user')
+    const userStr = storage.getItem('user')
     return userStr ? JSON.parse(userStr) : null
   })
   const [filters, setFilters] = useState({

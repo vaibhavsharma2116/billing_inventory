@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import React, { useEffect, useState } from 'react'
 import { 
   Package, 
@@ -59,7 +60,7 @@ function FinanceLedger() {
       setLoading(true)
       const res = await fetch(`${API_URL}/superadmin/finance/overview`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${storage.getItem('token')}`
         }
       })
       if (res.ok) {

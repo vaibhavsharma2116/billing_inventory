@@ -1,10 +1,11 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { Eye } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 

@@ -1,3 +1,4 @@
+import storage from './storage'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -5,7 +6,7 @@ export const downloadReturnPDF = (returnData, type = 'Sales Return') => {
   const doc = new jsPDF()
 
   // Get user details for Header
-  const userStr = localStorage.getItem('user')
+  const userStr = storage.getItem('user')
   const user = userStr ? JSON.parse(userStr) : {}
 
   const poppikDetails = {

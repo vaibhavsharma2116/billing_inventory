@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Building2, IndianRupee, AlertCircle, TrendingUp, Ban, CheckCircle2, Plus, X, Eye, Key, PieChart as PieChartIcon, BarChart3, Download, Package, Users, RefreshCw, CreditCard, Shield, Edit } from 'lucide-react'
@@ -135,10 +136,10 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
   const [createUserType, setCreateUserType] = useState('distributor')
 
   useEffect(() => {
-    const type = localStorage.getItem('createUserType')
+    const type = storage.getItem('createUserType')
     if (type) {
       setCreateUserType(type)
-      localStorage.removeItem('createUserType')
+      storage.removeItem('createUserType')
     }
   }, [])
 
@@ -195,7 +196,7 @@ function SuperAdminDashboard({ view = 'dashboard' }) {
   }, [searchParams, setSearchParams])
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token')
+    const token = storage.getItem('token')
     return token ? { 'Authorization': `Bearer ${token}` } : {}
   }
 

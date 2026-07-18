@@ -1434,13 +1434,15 @@ router.put('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
       }
 
       // Subtract old grand total from distributor financials
-      await tx.distributor.update({
-        where: { id: existingInvoice.distributorId },
-        data: {
-          totalAmountRealized: { decrement: getNum(existingInvoice.grandTotal) },
-          pendingCompanyBalance: { increment: getNum(existingInvoice.grandTotal) }
-        }
-      })
+      if (existingInvoice.distributorId) {
+        await tx.distributor.update({
+          where: { id: existingInvoice.distributorId },
+          data: {
+            totalAmountRealized: { decrement: getNum(existingInvoice.grandTotal) },
+            pendingCompanyBalance: { increment: getNum(existingInvoice.grandTotal) }
+          }
+        })
+      }
 
       // Delete old invoice items
       await tx.invoiceItem.deleteMany({
@@ -1531,13 +1533,15 @@ router.put('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
       })
 
       // Update distributor financials with new grand total
-      await tx.distributor.update({
-        where: { id: existingInvoice.distributorId },
-        data: {
-          totalAmountRealized: { increment: grandTotal },
-          pendingCompanyBalance: { decrement: grandTotal }
-        }
-      })
+      if (existingInvoice.distributorId) {
+        await tx.distributor.update({
+          where: { id: existingInvoice.distributorId },
+          data: {
+            totalAmountRealized: { increment: grandTotal },
+            pendingCompanyBalance: { decrement: grandTotal }
+          }
+        })
+      }
 
       // --- AUTO SYNC PURCHASE LEDGER IF DIRECT TO DISTRIBUTOR ---
       if (existingInvoice.partyId === null) {
@@ -1559,13 +1563,15 @@ router.put('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
           }
 
           // Subtract old grand total from distributor totalCompanyDebits and pendingCompanyBalance
-          await tx.distributor.update({
-            where: { id: existingInvoice.distributorId },
-            data: {
-              totalCompanyDebits: { decrement: getNum(existingInvoice.grandTotal) },
-              pendingCompanyBalance: { decrement: getNum(existingInvoice.grandTotal) }
-            }
-          })
+          if (existingInvoice.distributorId) {
+            await tx.distributor.update({
+              where: { id: existingInvoice.distributorId },
+              data: {
+                totalCompanyDebits: { decrement: getNum(existingInvoice.grandTotal) },
+                pendingCompanyBalance: { decrement: getNum(existingInvoice.grandTotal) }
+              }
+            })
+          }
 
           // Delete old purchase items
           await tx.purchaseItem.deleteMany({
@@ -1631,13 +1637,15 @@ router.put('/invoices/:id', authenticateToken, requireCSA, async (req, res) => {
           }
 
           // Add new grand total to distributor totalCompanyDebits and pendingCompanyBalance
-          await tx.distributor.update({
-            where: { id: existingInvoice.distributorId },
-            data: {
-              totalCompanyDebits: { increment: grandTotal },
-              pendingCompanyBalance: { increment: grandTotal }
-            }
-          })
+          if (existingInvoice.distributorId) {
+            await tx.distributor.update({
+              where: { id: existingInvoice.distributorId },
+              data: {
+                totalCompanyDebits: { increment: grandTotal },
+                pendingCompanyBalance: { increment: grandTotal }
+              }
+            })
+          }
         }
       }
 

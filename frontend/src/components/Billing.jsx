@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { downloadInvoicePDF } from '../utils/invoicePdfGenerator'
@@ -6,7 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL
 const DISTRIBUTOR_STATE_CODE = '27' // Maharashtra as default
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 
@@ -28,7 +29,7 @@ function Billing() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const editInvoiceId = searchParams.get('edit')
-  const userStr = localStorage.getItem('user')
+  const userStr = storage.getItem('user')
   const user = userStr ? JSON.parse(userStr) : null
   const isCSA = user?.role === 'CSA' 
   
@@ -58,7 +59,7 @@ function Billing() {
     if (isCSA) {
       fetchAllCSADistributors().then(() => {
         // If there's a saved distributor ID, select it
-        const savedDistId = localStorage.getItem('csaDistributorId')
+        const savedDistId = storage.getItem('csaDistributorId')
         if (savedDistId) {
           // We need to wait for fetchAllCSADistributors to complete so that distributors state is set
           // Let's check if distributors are available after a short delay
@@ -83,7 +84,7 @@ function Billing() {
         const data = await res.json()
         setDistributors(data || [])
         // If csaDistributorId is in localStorage, pre-select it
-        const savedId = localStorage.getItem('csaDistributorId')
+        const savedId = storage.getItem('csaDistributorId')
         if (savedId) {
           const found = data.find(d => d.distributorId === savedId || d.id === savedId)
           if (found) {
@@ -110,7 +111,7 @@ function Billing() {
   const selectDistributor = async (dist) => {
     const distId = dist.distributorId || dist.id
     setSelectedDistributor(dist)
-    localStorage.setItem('csaDistributorId', distId)
+    storage.setItem('csaDistributorId', distId)
     setShowDistributorDropdown(false)
     // Now fetch distributor details, parties, and products for this distributor
     try {
@@ -175,7 +176,7 @@ function Billing() {
   async function fetchInvoiceForEdit(id) {
     try {
       setFetchingInvoice(true)
-      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || storage.getItem('csaDistributorId')
       const url = isCSA 
         ? `${API_URL}/csa/distributors/${currentDistId}/invoices/${id}` 
         : `${API_URL}/invoices/${id}`
@@ -337,7 +338,7 @@ function Billing() {
         extraMarginPercentage: item.extraMarginPercentage
       }))
       
-      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || storage.getItem('csaDistributorId')
       
       const url = isCSA 
         ? `${API_URL}/csa/distributors/${currentDistId}/invoices/create` 
@@ -401,7 +402,7 @@ function Billing() {
     setSavedInvoice(null)
     setError('')
     if (isCSA) {
-      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+      const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || storage.getItem('csaDistributorId')
       navigate(`/csa/distributor/${currentDistId}`)
     } else {
       navigate('/billing')
@@ -425,7 +426,7 @@ function Billing() {
           {isCSA && (
             <button
               onClick={() => {
-                const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || localStorage.getItem('csaDistributorId')
+                const currentDistId = selectedDistributor?.distributorId || selectedDistributor?.id || storage.getItem('csaDistributorId')
                 navigate(`/csa/distributor/${currentDistId}`)
               }}
               className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"

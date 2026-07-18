@@ -1,3 +1,4 @@
+import storage from '../utils/storage'
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw } from 'lucide-react'
 
@@ -5,7 +6,7 @@ const BASE_API_URL = import.meta.env.VITE_API_URL
 const API_URL = `${BASE_API_URL}/csa/my-products`
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = storage.getItem('token')
   return token ? { 'Authorization': `Bearer ${token}` } : {}
 }
 

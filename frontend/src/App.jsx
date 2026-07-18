@@ -1,3 +1,4 @@
+import storage from './utils/storage'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Parties from './components/Parties'
@@ -46,8 +47,8 @@ import { useEffect } from 'react'
 
 const isAuthenticated = () => {
   try {
-    const token = localStorage.getItem('token')
-    const user = localStorage.getItem('user')
+    const token = storage.getItem('token')
+    const user = storage.getItem('user')
     console.log('isAuthenticated check - token:', !!token, 'user:', user)
     return !!token
   } catch (e) {
@@ -63,7 +64,7 @@ function App() {
     console.log('Current location:', location.pathname)
     try {
       if (isAuthenticated()) {
-        const userStr = localStorage.getItem('user')
+        const userStr = storage.getItem('user')
         if (userStr) {
           const user = JSON.parse(userStr)
           if (location.pathname === '/login') {
