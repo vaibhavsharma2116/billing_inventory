@@ -513,8 +513,7 @@ function CSAMyBilling() {
                               step="0.01"
                               value={item.rate}
                               onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)}
-                              disabled={selectedDistributor?.isCsa}
-                              className={`w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg ${selectedDistributor?.isCsa ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}`}
+                              className="w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg"
                             />
                           )}
                         </td>
@@ -528,8 +527,7 @@ function CSAMyBilling() {
                               min="0"
                               value={item.extraMarginPercentage}
                               onChange={(e) => updateItem(item.id, 'extraMarginPercentage', parseFloat(e.target.value) || 0)}
-                              disabled={selectedDistributor?.isCsa}
-                              className={`w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg ${selectedDistributor?.isCsa ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}`}
+                              className="w-20 md:w-24 px-2 py-1 border border-gray-300 rounded-lg"
                             />
                           )}
                         </td>
