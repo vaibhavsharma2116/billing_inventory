@@ -103,214 +103,222 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
         };
       });
 
-      const syncedItems = [];
+      // --- START PRISMA TRANSACTION ---
+      const { syncedItems, purchaseLedger } = await prisma.$transaction(async (tx) => {
+        const _syncedItems = [];
 
-      for (let i = 0; i < cleanProducts.length; i++) {
-        const item = cleanProducts[i];
-        try {
-          console.log(`🔄 Processing item ${i + 1} of ${cleanProducts.length}: ${item.productName}`)
-          // 1. Strict Schema Compliance Typecasting
-          const safeHsnStr = item.hsn ? String(item.hsn).trim() : "";
+        for (let i = 0; i < cleanProducts.length; i++) {
+          const item = cleanProducts[i];
+          try {
+            console.log(`🔄 Processing item ${i + 1} of ${cleanProducts.length}: ${item.productName}`)
+            // 1. Strict Schema Compliance Typecasting
+            const safeHsnStr = item.hsn ? String(item.hsn).trim() : "";
 
-          // Bada number validation (Taki INT4 crash na ho)
-          let cleanQty = parseInt(item.qty, 10) || 0;
-          if (cleanQty > 2147483647) {
-            console.log(`[Warning] Quantity ${cleanQty} is too large for INT4, resetting to standard loop default.`);
-            cleanQty = 12; // Agar barcode galti se quantity mein aa gaya hai toh use standard pack (12/1) par fallback karein
-          }
-
-          // 2. Search dynamically by String HSK, Name, AND rate to avoid merging different products!
-          let product = await prisma.product.findFirst({
-            where: {
-              distributorId: distributorId,
-              name: item.productName,
-              hsn: safeHsnStr !== "" ? safeHsnStr : undefined,
-              costPrice: item.rate ? parseFloat(item.rate) : undefined
+            // Bada number validation (Taki INT4 crash na ho)
+            let cleanQty = parseInt(item.qty, 10) || 0;
+            if (cleanQty > 2147483647) {
+              console.log(`[Warning] Quantity ${cleanQty} is too large for INT4, resetting to standard loop default.`);
+              cleanQty = 12; // Agar barcode galti se quantity mein aa gaya hai toh use standard pack (12/1) par fallback karein
             }
-          });
 
-          // Fallback if no match by name + hsn + rate
-          if (!product && safeHsnStr !== "") {
-            product = await prisma.product.findFirst({
+            // 2. Search dynamically by String HSK, Name, AND rate to avoid merging different products!
+            let product = await tx.product.findFirst({
               where: {
                 distributorId: distributorId,
-                hsn: safeHsnStr,
+                name: item.productName,
+                hsn: safeHsnStr !== "" ? safeHsnStr : undefined,
                 costPrice: item.rate ? parseFloat(item.rate) : undefined
               }
             });
-          }
 
-          // Product-specific MRP and Rate overrides
-          let finalMRP = parseFloat(item.mrp) || 0;
-          let finalRate = parseFloat(item.rate) || 0;
+            // Fallback if no match by name + hsn + rate
+            if (!product && safeHsnStr !== "") {
+              product = await tx.product.findFirst({
+                where: {
+                  distributorId: distributorId,
+                  hsn: safeHsnStr,
+                  costPrice: item.rate ? parseFloat(item.rate) : undefined
+                }
+              });
+            }
 
-          if (item.productName.includes("Liplock Liquid Matte Lipstick")) {
-            finalMRP = 329.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 117.10;
-            }
-          } else if (item.productName.includes("Mattepout Bullet Lipstick")) {
-            finalMRP = 276.00;
-            // Possible rates: 81.15, 98.23, or 102.91
-            if (!finalRate || finalRate > 200) {
-              finalRate = finalRate || 81.15;
-            }
-          } else if (item.productName.includes("Boldeyes Intense Smudge-Proof Kajal")) {
-            finalMRP = 228.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 117.10;
-            }
-          } else if (item.productName.includes("Glow Drop Liquid Gloss Lipstick")) {
-            finalMRP = 298.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 106.06;
-            }
-          } else if (item.productName.includes("Makeup Fixer Spray")) {
-            finalMRP = 325.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 115.67;
-            }
-          } else if (item.productName.includes("Misceller Water")) {
-            finalMRP = 399.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 142.01;
-            }
-          } else if (item.productName.includes("Nailpaint Remover")) {
-            finalMRP = 55.00;
-            if (!finalRate || finalRate > 100) {
-              finalRate = 19.58;
-            }
-          } else if (item.productName.includes("Ultra Lashlift Volumizing Mascara")) {
-            finalMRP = 298.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 106.06;
-            }
-          } else if (item.productName.includes("Neon Nailpaint") || item.productName.includes("Nailpaint-")) {
-            finalMRP = 129.00;
-            if (!finalRate || finalRate > 100) {
-              finalRate = 45.92;
-            }
-          } else if (item.productName.includes("Makeup Sponge")) {
-            finalMRP = 299.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 106.42;
-            }
-          } else if (item.productName.includes("Secondskin Matte Foundation")) {
-            finalMRP = 599.00;
-            if (!finalRate || finalRate > 300) {
-              finalRate = finalRate || 213.24;
-            }
-          } else if (item.productName.includes("Concealer")) {
-            finalMRP = 498.00;
-            if (!finalRate || finalRate > 200) {
-              finalRate = 177.25;
-            }
-          }
+            // Product-specific MRP and Rate overrides
+            let finalMRP = parseFloat(item.mrp) || 0;
+            let finalRate = parseFloat(item.rate) || 0;
 
-          if (product) {
-            console.log(`🔄 Found existing product: ${product.name} (${product.id}), updating stock by +${cleanQty}`)
-            // 3. Type-Safe Update Layer
-            // Get GST percentage from AI or default to 18
-            const gstPercentage = item.tax_pct ? parseFloat(item.tax_pct) : 18;
-            product = await prisma.product.update({
-              where: {
-                id: product.id
-              },
-              data: {
-                currentStock: {
-                  increment: cleanQty
+            if (item.productName.includes("Liplock Liquid Matte Lipstick")) {
+              finalMRP = 329.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 117.10;
+              }
+            } else if (item.productName.includes("Mattepout Bullet Lipstick")) {
+              finalMRP = 276.00;
+              // Possible rates: 81.15, 98.23, or 102.91
+              if (!finalRate || finalRate > 200) {
+                finalRate = finalRate || 81.15;
+              }
+            } else if (item.productName.includes("Boldeyes Intense Smudge-Proof Kajal")) {
+              finalMRP = 228.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 117.10;
+              }
+            } else if (item.productName.includes("Glow Drop Liquid Gloss Lipstick")) {
+              finalMRP = 298.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 106.06;
+              }
+            } else if (item.productName.includes("Makeup Fixer Spray")) {
+              finalMRP = 325.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 115.67;
+              }
+            } else if (item.productName.includes("Misceller Water")) {
+              finalMRP = 399.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 142.01;
+              }
+            } else if (item.productName.includes("Nailpaint Remover")) {
+              finalMRP = 55.00;
+              if (!finalRate || finalRate > 100) {
+                finalRate = 19.58;
+              }
+            } else if (item.productName.includes("Ultra Lashlift Volumizing Mascara")) {
+              finalMRP = 298.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 106.06;
+              }
+            } else if (item.productName.includes("Neon Nailpaint") || item.productName.includes("Nailpaint-")) {
+              finalMRP = 129.00;
+              if (!finalRate || finalRate > 100) {
+                finalRate = 45.92;
+              }
+            } else if (item.productName.includes("Makeup Sponge")) {
+              finalMRP = 299.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 106.42;
+              }
+            } else if (item.productName.includes("Secondskin Matte Foundation")) {
+              finalMRP = 599.00;
+              if (!finalRate || finalRate > 300) {
+                finalRate = finalRate || 213.24;
+              }
+            } else if (item.productName.includes("Concealer")) {
+              finalMRP = 498.00;
+              if (!finalRate || finalRate > 200) {
+                finalRate = 177.25;
+              }
+            }
+
+            if (product) {
+              console.log(`🔄 Found existing product: ${product.name} (${product.id}), updating stock by +${cleanQty}`)
+              // 3. Type-Safe Update Layer
+              // Get GST percentage from AI or default to 18
+              const gstPercentage = item.tax_pct ? parseFloat(item.tax_pct) : 18;
+              product = await tx.product.update({
+                where: {
+                  id: product.id
                 },
-                costPrice: finalRate || product.costPrice,
-                name: item.productName,
-                hsn: safeHsnStr !== "" ? safeHsnStr : product.hsn,
-                baseSellingPrice: finalMRP || product.baseSellingPrice,
-                gstPercentage
-              }
-            });
-          } else {
-            console.log(`🆕 Creating new product: ${item.productName} with qty ${cleanQty}`)
-            // 4. Type-Safe Creation Layer
-            // Get GST percentage from AI or default to 18
-            const gstPercentage = item.tax_pct ? parseFloat(item.tax_pct) : 18;
-            product = await prisma.product.create({
-              data: {
-                distributorId: distributorId,
-                name: item.productName,
-                hsn: safeHsnStr,
-                currentStock: cleanQty,
-                costPrice: finalRate || 0,
-                baseSellingPrice: finalMRP || 0,
-                gstPercentage
-              }
-            });
+                data: {
+                  currentStock: {
+                    increment: cleanQty
+                  },
+                  costPrice: finalRate || product.costPrice,
+                  name: item.productName,
+                  hsn: safeHsnStr !== "" ? safeHsnStr : product.hsn,
+                  baseSellingPrice: finalMRP || product.baseSellingPrice,
+                  gstPercentage
+                }
+              });
+            } else {
+              console.log(`🆕 Creating new product: ${item.productName} with qty ${cleanQty}`)
+              // 4. Type-Safe Creation Layer
+              // Get GST percentage from AI or default to 18
+              const gstPercentage = item.tax_pct ? parseFloat(item.tax_pct) : 18;
+              product = await tx.product.create({
+                data: {
+                  distributorId: distributorId,
+                  name: item.productName,
+                  hsn: safeHsnStr,
+                  currentStock: cleanQty,
+                  costPrice: finalRate || 0,
+                  baseSellingPrice: finalMRP || 0,
+                  gstPercentage
+                }
+              });
+            }
+            _syncedItems.push(product);
+            console.log(`✅ Synced item ${i + 1}: ${product.name} (stock now ${product.currentStock})`);
+          } catch (dbErr) {
+            console.error(`❌ Error processing item ${i + 1} (${item.productName}):`, dbErr);
+            throw new Error(`Failed to process item ${item.productName}: ${dbErr.message}`);
           }
-          syncedItems.push(product);
-          console.log(`✅ Synced item ${i + 1}: ${product.name} (stock now ${product.currentStock})`);
-        } catch (dbErr) {
-          console.error(`❌ Error processing item ${i + 1} (${item.productName}):`, dbErr);
-          continue;
         }
-      }
-      console.log(`📊 Total synced items: ${syncedItems.length} out of ${cleanProducts.length}`);
+        console.log(`📊 Total synced items: ${_syncedItems.length} out of ${cleanProducts.length}`);
 
-      // --- CREATE PURCHASE LEDGER ---
-      const calculatedTotal = cleanProducts.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
-      const purchaseInvoiceNo = req.body.invoiceNo || `PUR-${Date.now()}`;
-      const finalTotal = req.body.totalAmount ? parseFloat(req.body.totalAmount) : calculatedTotal;
+        // --- CREATE PURCHASE LEDGER ---
+        const calculatedTotal = cleanProducts.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
+        const purchaseInvoiceNo = req.body.invoiceNo || `PUR-${Date.now()}`;
+        const finalTotal = req.body.totalAmount ? parseFloat(req.body.totalAmount) : calculatedTotal;
 
-      const purchaseLedger = await prisma.purchaseLedger.create({
-        data: {
-          supplierName: supplierName || "Supplier",
-          supplierId: supplierId,
-          invoiceNo: purchaseInvoiceNo,
-          date: req.body.invoiceDate ? new Date(req.body.invoiceDate) : new Date(),
-          totalAmount: finalTotal,
-          distributorId: distributorId
-        }
-      });
-
-      // --- CREATE PURCHASE ITEMS ---
-      for (let i = 0; i < syncedItems.length; i++) {
-        const product = syncedItems[i];
-        const item = cleanProducts[i];
-
-        // Get cleaned values
-        const cleanedValues = cleanInvoiceRow(item);
-        const gstPercentage = item.tax_pct ? parseFloat(item.tax_pct) : 18;
-
-        // Calculate total if needed
-        let itemTotal = cleanedValues.total;
-        if (!itemTotal || itemTotal === 0) {
-          const taxable = (parseInt(item.qty, 10) || 0) * (parseFloat(item.rate) || 0);
-          const tax = (taxable * gstPercentage) / 100;
-          itemTotal = taxable + tax;
-        }
-
-        await prisma.purchaseItem.create({
+        const _purchaseLedger = await tx.purchaseLedger.create({
           data: {
-            purchaseId: purchaseLedger.id,
-            productId: product.id,
-            qty: parseInt(item.qty, 10) || 0,
-            mrp: cleanedValues.mrp || parseFloat(item.mrp) || null,
-            costPrice: parseFloat(item.rate) || 0,
-            rate: cleanedValues.rate || parseFloat(item.rate) || 0,
-            discount: cleanedValues.discount || parseFloat(item.discount) || null,
-            gstPercentage,
-            total: itemTotal,
-            batchNo: item.batchNo || null,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+            supplierName: supplierName || "Supplier",
+            supplierId: supplierId,
+            invoiceNo: purchaseInvoiceNo,
+            date: req.body.invoiceDate ? new Date(req.body.invoiceDate) : new Date(),
+            totalAmount: finalTotal,
             distributorId: distributorId
           }
         });
-      }
 
-      // --- UPDATE DISTRIBUTOR FINANCIALS ---
-      await prisma.distributor.update({
-        where: { id: distributorId },
-        data: {
-          totalCompanyDebits: { increment: finalTotal },
-          pendingCompanyBalance: { increment: finalTotal }
+        // --- CREATE PURCHASE ITEMS ---
+        for (let i = 0; i < _syncedItems.length; i++) {
+          const product = _syncedItems[i];
+          const item = cleanProducts[i];
+
+          // Get cleaned values
+          const cleanedValues = cleanInvoiceRow(item);
+          const gstPercentage = item.tax_pct ? parseFloat(item.tax_pct) : 18;
+
+          // Calculate total if needed
+          let itemTotal = cleanedValues.total;
+          if (!itemTotal || itemTotal === 0) {
+            const taxable = (parseInt(item.qty, 10) || 0) * (parseFloat(item.rate) || 0);
+            const tax = (taxable * gstPercentage) / 100;
+            itemTotal = taxable + tax;
+          }
+
+          await tx.purchaseItem.create({
+            data: {
+              purchaseId: _purchaseLedger.id,
+              productId: product.id,
+              qty: parseInt(item.qty, 10) || 0,
+              mrp: cleanedValues.mrp || parseFloat(item.mrp) || null,
+              costPrice: parseFloat(item.rate) || 0,
+              rate: cleanedValues.rate || parseFloat(item.rate) || 0,
+              discount: cleanedValues.discount || parseFloat(item.discount) || null,
+              gstPercentage,
+              total: itemTotal,
+              batchNo: item.batchNo || null,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+              distributorId: distributorId
+            }
+          });
         }
+
+        // --- UPDATE DISTRIBUTOR FINANCIALS ---
+        await tx.distributor.update({
+          where: { id: distributorId },
+          data: {
+            totalCompanyDebits: { increment: finalTotal },
+            pendingCompanyBalance: { increment: finalTotal }
+          }
+        });
+
+        return { syncedItems: _syncedItems, purchaseLedger: _purchaseLedger };
+      }, {
+        maxWait: 15000,
+        timeout: 120000
       });
 
       // --- RETURN RESPONSE ---
@@ -1019,145 +1027,152 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
       }
     }
 
-    const purchaseLedger = await prisma.purchaseLedger.create({
-      data: {
-        supplierName: supplierName || "Supplier",
-        invoiceNo: purchaseInvoiceNo,
-        date: purchaseDate,
-        totalAmount: finalTotal,
-        distributorId: distributorId,
-        ...(supplierId ? {
-          supplier: {
-            connect: { id: supplierId }
-          }
-        } : {})
-      }
-    });
-
-    // Update distributor financials
-    await prisma.distributor.update({
-      where: { id: distributorId },
-      data: {
-        totalCompanyDebits: { increment: finalTotal },
-        pendingCompanyBalance: { increment: finalTotal }
-      }
-    });
-
-    const results = [];
-
-    for (let index = 0; index < items.length; index++) {
-      const item = items[index];
-      let product;
-      let wasExistingProduct = false;
-
-      console.log('=== Processing purchase item ===');
-      console.log('Raw item:', item);
-
-      // Bada number validation (Taki INT4 crash na ho)
-      let cleanQty = parseInt(item.quantity, 10) || 0;
-      if (cleanQty > 2147483647) {
-        console.log(`[Warning] Quantity ${cleanQty} is too large for INT4, resetting to standard loop default.`);
-        cleanQty = 12; // Agar barcode galti se quantity mein aa gaya hai toh use standard pack (12/1) par fallback karein
-      }
-
-      // Clean product name
-      const cleanedProductName = item.productName ? item.productName.trim().replace(/\s{2,}/g, ' ') : '';
-      console.log('Cleaned product name:', cleanedProductName);
-
-      // First check by SKU if available
-      if (item.sku) {
-        product = await prisma.product.findFirst({
-          where: {
-            distributorId: distributorId,
-            sku: item.sku
-          }
-        });
-        console.log('Found existing product by SKU:', product ? { id: product.id, sku: product.sku, currentStock: product.currentStock, name: product.name } : null);
-      }
-
-      // If no SKU match, check by product name
-      if (!product && cleanedProductName) {
-        product = await prisma.product.findFirst({
-          where: {
-            distributorId: distributorId,
-            name: { equals: cleanedProductName, mode: 'insensitive' }
-          }
-        });
-        console.log('Found existing product by name:', product ? { id: product.id, name: product.name, currentStock: product.currentStock } : null);
-      }
-
-      if (product) {
-        wasExistingProduct = true;
-        console.log('Updating existing product with quantity:', cleanQty);
-        // Update existing product stock
-        product = await prisma.product.update({
-          where: { id: product.id },
-          data: {
-            currentStock: { increment: cleanQty },
-            costPrice: item.costPrice,
-            name: cleanedProductName || product.name,
-            hsn: item.hsn || product.hsn || '',
-            batchNo: item.batchNo || product.batchNo,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : product.expiryDate,
-            baseSellingPrice: item.mrp || item.costPrice * 1.2,
-            gstPercentage: item.gstPercentage
-          }
-        });
-        console.log('Updated product:', { id: product.id, currentStock: product.currentStock });
-      } else {
-        wasExistingProduct = false;
-        console.log('Creating new product with name:', cleanedProductName);
-        // Create new product
-        product = await prisma.product.create({
-          data: {
-            name: cleanedProductName || 'Unnamed Product',
-            sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            hsn: item.hsn || '',
-            batchNo: item.batchNo || null,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-            costPrice: item.costPrice,
-            baseSellingPrice: item.mrp || item.costPrice * 1.2,
-            gstPercentage: item.gstPercentage,
-            currentStock: cleanQty,
-            distributorId: distributorId
-          }
-        });
-        console.log('Created new product:', { id: product.id, sku: product.sku, name: product.name, currentStock: product.currentStock });
-      }
-
-      // Create purchase item
-      const cleanedValues = cleanInvoiceRow(item);
-      const gstPercentage = item.gstPercentage || 18;
-      let itemTotal = cleanedValues.total || item.total;
-      if (!itemTotal || itemTotal === 0) {
-        const taxable = cleanQty * (parseFloat(item.costPrice) || 0);
-        const tax = (taxable * gstPercentage) / 100;
-        itemTotal = taxable + tax;
-      }
-
-      await prisma.purchaseItem.create({
+    // --- START PRISMA TRANSACTION ---
+    const { purchaseLedger, results } = await prisma.$transaction(async (tx) => {
+      const _purchaseLedger = await tx.purchaseLedger.create({
         data: {
-          purchaseId: purchaseLedger.id,
-          productId: product.id,
-          qty: cleanQty,
-          mrp: parseFloat(item.mrp) || null,
-          costPrice: parseFloat(item.costPrice) || parseFloat(item.rate) || 0,
-          rate: parseFloat(item.rate) || parseFloat(item.costPrice) || 0,
-          discount: parseFloat(item.discount) || null,
-          gstPercentage,
-          total: itemTotal,
-          batchNo: item.batchNo || null,
-          expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-          distributorId: distributorId
+          supplierName: supplierName || "Supplier",
+          invoiceNo: purchaseInvoiceNo,
+          date: purchaseDate,
+          totalAmount: finalTotal,
+          distributorId: distributorId,
+          ...(supplierId ? {
+            supplier: {
+              connect: { id: supplierId }
+            }
+          } : {})
         }
       });
 
-      results.push({
-        product,
-        quantityAdded: cleanQty,
-        action: wasExistingProduct ? 'updated' : 'created'
+      // Update distributor financials
+      await tx.distributor.update({
+        where: { id: distributorId },
+        data: {
+          totalCompanyDebits: { increment: finalTotal },
+          pendingCompanyBalance: { increment: finalTotal }
+        }
       });
-    }
+
+      const _results = [];
+
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+        let product;
+        let wasExistingProduct = false;
+
+        console.log('=== Processing purchase item ===');
+        console.log('Raw item:', item);
+
+        // Bada number validation (Taki INT4 crash na ho)
+        let cleanQty = parseInt(item.quantity, 10) || 0;
+        if (cleanQty > 2147483647) {
+          console.log(`[Warning] Quantity ${cleanQty} is too large for INT4, resetting to standard loop default.`);
+          cleanQty = 12; // Agar barcode galti se quantity mein aa gaya hai toh use standard pack (12/1) par fallback karein
+        }
+
+        // Clean product name
+        const cleanedProductName = item.productName ? item.productName.trim().replace(/\s{2,}/g, ' ') : '';
+        console.log('Cleaned product name:', cleanedProductName);
+
+        // First check by SKU if available
+        if (item.sku) {
+          product = await tx.product.findFirst({
+            where: {
+              distributorId: distributorId,
+              sku: item.sku
+            }
+          });
+          console.log('Found existing product by SKU:', product ? { id: product.id, sku: product.sku, currentStock: product.currentStock, name: product.name } : null);
+        }
+
+        // If no SKU match, check by product name
+        if (!product && cleanedProductName) {
+          product = await tx.product.findFirst({
+            where: {
+              distributorId: distributorId,
+              name: { equals: cleanedProductName, mode: 'insensitive' }
+            }
+          });
+          console.log('Found existing product by name:', product ? { id: product.id, name: product.name, currentStock: product.currentStock } : null);
+        }
+
+        if (product) {
+          wasExistingProduct = true;
+          console.log('Updating existing product with quantity:', cleanQty);
+          // Update existing product stock
+          product = await tx.product.update({
+            where: { id: product.id },
+            data: {
+              currentStock: { increment: cleanQty },
+              costPrice: item.costPrice,
+              name: cleanedProductName || product.name,
+              hsn: item.hsn || product.hsn || '',
+              batchNo: item.batchNo || product.batchNo,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : product.expiryDate,
+              baseSellingPrice: item.mrp || item.costPrice * 1.2,
+              gstPercentage: item.gstPercentage
+            }
+          });
+          console.log('Updated product:', { id: product.id, currentStock: product.currentStock });
+        } else {
+          wasExistingProduct = false;
+          console.log('Creating new product with name:', cleanedProductName);
+          // Create new product
+          product = await tx.product.create({
+            data: {
+              name: cleanedProductName || 'Unnamed Product',
+              sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              hsn: item.hsn || '',
+              batchNo: item.batchNo || null,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+              costPrice: item.costPrice,
+              baseSellingPrice: item.mrp || item.costPrice * 1.2,
+              gstPercentage: item.gstPercentage,
+              currentStock: cleanQty,
+              distributorId: distributorId
+            }
+          });
+          console.log('Created new product:', { id: product.id, sku: product.sku, name: product.name, currentStock: product.currentStock });
+        }
+
+        // Create purchase item
+        const cleanedValues = cleanInvoiceRow(item);
+        const gstPercentage = item.gstPercentage || 18;
+        let itemTotal = cleanedValues.total || item.total;
+        if (!itemTotal || itemTotal === 0) {
+          const taxable = cleanQty * (parseFloat(item.costPrice) || 0);
+          const tax = (taxable * gstPercentage) / 100;
+          itemTotal = taxable + tax;
+        }
+
+        await tx.purchaseItem.create({
+          data: {
+            purchaseId: _purchaseLedger.id,
+            productId: product.id,
+            qty: cleanQty,
+            mrp: parseFloat(item.mrp) || null,
+            costPrice: parseFloat(item.costPrice) || parseFloat(item.rate) || 0,
+            rate: parseFloat(item.rate) || parseFloat(item.costPrice) || 0,
+            discount: parseFloat(item.discount) || null,
+            gstPercentage,
+            total: itemTotal,
+            batchNo: item.batchNo || null,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+            distributorId: distributorId
+          }
+        });
+
+        _results.push({
+          product,
+          quantityAdded: cleanQty,
+          action: wasExistingProduct ? 'updated' : 'created'
+        });
+      }
+      return { purchaseLedger: _purchaseLedger, results: _results };
+    }, {
+      maxWait: 15000,
+      timeout: 120000
+    });
 
     // Clean up file
     if (fs.existsSync(filePath)) {
@@ -1322,39 +1337,41 @@ router.delete('/:id', authenticateToken, requireDistributor, async (req, res) =>
       return res.status(404).json({ error: 'Purchase not found' })
     }
     
-    // Update inventory: decrease stock for each product
-    for (const item of purchase.purchaseItems) {
-      await prisma.product.update({
-        where: { id: item.productId },
+    await prisma.$transaction(async (tx) => {
+      // Update inventory: decrease stock for each product
+      for (const item of purchase.purchaseItems) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            currentStock: {
+              decrement: item.qty
+            }
+          }
+        })
+      }
+      
+      // Update distributor financials: decrease totalCompanyDebits and pendingCompanyBalance
+      await tx.distributor.update({
+        where: { id: req.user.distributorId },
         data: {
-          currentStock: {
-            decrement: item.qty
+          totalCompanyDebits: {
+            decrement: purchase.totalAmount
+          },
+          pendingCompanyBalance: {
+            decrement: purchase.totalAmount
           }
         }
       })
-    }
-    
-    // Update distributor financials: decrease totalCompanyDebits and pendingCompanyBalance
-    await prisma.distributor.update({
-      where: { id: req.user.distributorId },
-      data: {
-        totalCompanyDebits: {
-          decrement: purchase.totalAmount
-        },
-        pendingCompanyBalance: {
-          decrement: purchase.totalAmount
-        }
-      }
-    })
-    
-    // Delete the purchase items and then the purchase ledger
-    await prisma.purchaseItem.deleteMany({
-      where: { purchaseId: purchase.id }
-    })
-    
-    await prisma.purchaseLedger.delete({
-      where: { id: purchase.id }
-    })
+      
+      // Delete the purchase items and then the purchase ledger
+      await tx.purchaseItem.deleteMany({
+        where: { purchaseId: purchase.id }
+      })
+      
+      await tx.purchaseLedger.delete({
+        where: { id: purchase.id }
+      })
+    });
     
     res.json({ message: 'Purchase deleted successfully' })
   } catch (error) {
@@ -1380,117 +1397,120 @@ router.put('/:id', authenticateToken, requireDistributor, async (req, res) => {
       return res.status(404).json({ error: 'Purchase not found' })
     }
     
-    // Revert inventory changes from old items
-    for (const oldItem of purchase.purchaseItems) {
-      await prisma.product.update({
-        where: { id: oldItem.productId },
-        data: {
-          currentStock: { decrement: oldItem.qty }
-        }
-      })
-    }
-    
-    // Process new items
-    const newTotalAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || (parseFloat(item.costPrice || item.rate) * parseInt(item.qty))), 0)
-    
-    // Update purchase ledger total
-    await prisma.purchaseLedger.update({
-      where: { id: purchase.id },
-      data: { totalAmount: newTotalAmount }
-    })
-    
-    // Delete old items
-    await prisma.purchaseItem.deleteMany({
-      where: { purchaseId: purchase.id }
-    })
-    
-    // Add new items and update inventory
-    for (let index = 0; index < items.length; index++) {
-      const item = items[index]
-      
-      // Check if product exists or create new
-      let product = await prisma.product.findFirst({
-        where: {
-          distributorId: req.user.distributorId,
-          OR: [
-            { name: item.productName },
-            { sku: item.sku || undefined }
-          ]
-        }
-      })
-      
-      const qty = parseInt(item.qty) || 0
-      const costPrice = parseFloat(item.costPrice || item.rate) || 0
-      
-      if (product) {
-        // Update existing product
-        product = await prisma.product.update({
-          where: { id: product.id },
+    // --- START PRISMA TRANSACTION ---
+    const updatedPurchase = await prisma.$transaction(async (tx) => {
+      // Revert inventory changes from old items
+      for (const oldItem of purchase.purchaseItems) {
+        await tx.product.update({
+          where: { id: oldItem.productId },
           data: {
-            currentStock: { increment: qty },
-            costPrice: costPrice || product.costPrice,
-            name: item.productName || product.name,
-            hsn: item.hsn || product.hsn,
-            baseSellingPrice: (item.mrp ? parseFloat(item.mrp) : (costPrice * 1.2)) || product.baseSellingPrice,
-            gstPercentage: parseFloat(item.gstPercentage || item.tax_pct) || product.gstPercentage
+            currentStock: { decrement: oldItem.qty }
           }
         })
-      } else {
-        // Create new product
-        product = await prisma.product.create({
+      }
+      
+      // Process new items
+      const newTotalAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || (parseFloat(item.costPrice || item.rate) * parseInt(item.qty))), 0)
+      
+      // Update purchase ledger total
+      await tx.purchaseLedger.update({
+        where: { id: purchase.id },
+        data: { totalAmount: newTotalAmount }
+      })
+      
+      // Delete old items
+      await tx.purchaseItem.deleteMany({
+        where: { purchaseId: purchase.id }
+      })
+      
+      // Add new items and update inventory
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index]
+        
+        // Check if product exists or create new
+        let product = await tx.product.findFirst({
+          where: {
+            distributorId: req.user.distributorId,
+            OR: [
+              { name: item.productName },
+              { sku: item.sku || undefined }
+            ]
+          }
+        })
+        
+        const qty = parseInt(item.qty) || 0
+        const costPrice = parseFloat(item.costPrice || item.rate) || 0
+        
+        if (product) {
+          // Update existing product
+          product = await tx.product.update({
+            where: { id: product.id },
+            data: {
+              currentStock: { increment: qty },
+              costPrice: costPrice || product.costPrice,
+              name: item.productName || product.name,
+              hsn: item.hsn || product.hsn,
+              baseSellingPrice: (item.mrp ? parseFloat(item.mrp) : (costPrice * 1.2)) || product.baseSellingPrice,
+              gstPercentage: parseFloat(item.gstPercentage || item.tax_pct) || product.gstPercentage
+            }
+          })
+        } else {
+          // Create new product
+          product = await tx.product.create({
+            data: {
+              name: item.productName || 'Unnamed Product',
+              sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              hsn: item.hsn || '',
+              costPrice: costPrice,
+              baseSellingPrice: (item.mrp ? parseFloat(item.mrp) : (costPrice * 1.2)) || costPrice * 1.2,
+              gstPercentage: parseFloat(item.gstPercentage || item.tax_pct) || 18,
+              currentStock: qty,
+              distributorId: req.user.distributorId
+            }
+          })
+        }
+        
+        // Create new purchase item
+        await tx.purchaseItem.create({
           data: {
-            name: item.productName || 'Unnamed Product',
-            sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            hsn: item.hsn || '',
+            purchaseId: purchase.id,
+            productId: product.id,
+            sortOrder: index,
+            qty: qty,
+            mrp: item.mrp ? parseFloat(item.mrp) : null,
             costPrice: costPrice,
-            baseSellingPrice: (item.mrp ? parseFloat(item.mrp) : (costPrice * 1.2)) || costPrice * 1.2,
+            rate: parseFloat(item.rate || item.costPrice) || costPrice,
+            discount: item.discount ? parseFloat(item.discount) : null,
             gstPercentage: parseFloat(item.gstPercentage || item.tax_pct) || 18,
-            currentStock: qty,
+            total: parseFloat(item.total) || (costPrice * qty),
+            batchNo: item.batchNo || null,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
             distributorId: req.user.distributorId
           }
         })
       }
       
-      // Create new purchase item
-      await prisma.purchaseItem.create({
+      // Update distributor financials (difference between new and old total)
+      const difference = newTotalAmount - purchase.totalAmount
+      await tx.distributor.update({
+        where: { id: req.user.distributorId },
         data: {
-          purchaseId: purchase.id,
-          productId: product.id,
-          sortOrder: index,
-          qty: qty,
-          mrp: item.mrp ? parseFloat(item.mrp) : null,
-          costPrice: costPrice,
-          rate: parseFloat(item.rate || item.costPrice) || costPrice,
-          discount: item.discount ? parseFloat(item.discount) : null,
-          gstPercentage: parseFloat(item.gstPercentage || item.tax_pct) || 18,
-          total: parseFloat(item.total) || (costPrice * qty),
-          batchNo: item.batchNo || null,
-          expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-          distributorId: req.user.distributorId
+          totalCompanyDebits: { increment: difference },
+          pendingCompanyBalance: { increment: difference }
         }
       })
-    }
-    
-    // Update distributor financials (difference between new and old total)
-    const difference = newTotalAmount - purchase.totalAmount
-    await prisma.distributor.update({
-      where: { id: req.user.distributorId },
-      data: {
-        totalCompanyDebits: { increment: difference },
-        pendingCompanyBalance: { increment: difference }
-      }
-    })
-    
-    // Return the updated purchase
-    const updatedPurchase = await prisma.purchaseLedger.findFirst({
-      where: { id: purchase.id },
-      include: {
-        purchaseItems: {
-          include: { product: true },
-          orderBy: { sortOrder: 'asc' }
+      
+      // Return the updated purchase
+      return await tx.purchaseLedger.findFirst({
+        where: { id: purchase.id },
+        include: {
+          purchaseItems: {
+            include: { product: true },
+            orderBy: { sortOrder: 'asc' }
+          }
         }
-      }
-    })
+      })
+    }, { timeout: 120000 });
     
     res.json(convertDecimals(updatedPurchase))
   } catch (error) {
