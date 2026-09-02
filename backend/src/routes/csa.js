@@ -728,6 +728,65 @@ router.get('/distributors', authenticateToken, requireCSA, async (req, res) => {
   }
 })
 
+router.put('/distributors/:id', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const { id } = req.params
+    const csaId = req.user.userId
+    const { companyName, ownerName, email, phone, city, gstIn, password } = req.body
+
+    const existingDistributor = await prisma.distributor.findUnique({ 
+      where: { id },
+      include: { users: true }
+    })
+
+    if (!existingDistributor || existingDistributor.csaId !== csaId) {
+      return res.status(404).json({ error: 'Distributor not found or access denied' })
+    }
+
+    const updateData = {}
+    if (companyName) updateData.companyName = companyName
+    if (ownerName) updateData.ownerName = ownerName
+    if (email) {
+      const existingDistEmail = await prisma.distributor.findFirst({ where: { email } })
+      if (existingDistEmail && existingDistEmail.id !== id) {
+        return res.status(400).json({ error: 'Email already in use by another distributor' })
+      }
+      updateData.email = email
+    }
+    if (phone) updateData.phone = phone
+    if (city) updateData.city = city
+    if (gstIn) updateData.gstIn = gstIn
+
+    // Also update the linked user account
+    if (existingDistributor.users && existingDistributor.users.length > 0) {
+      const userId = existingDistributor.users[0].id
+      const userUpdateData = {}
+      if (ownerName) userUpdateData.name = ownerName
+      if (email) userUpdateData.email = email
+      if (password) {
+        const bcrypt = require('bcrypt')
+        const hashedPassword = await bcrypt.hash(password, 10)
+        userUpdateData.password = hashedPassword
+      }
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: userUpdateData
+      })
+    }
+
+    const updatedDistributor = await prisma.distributor.update({
+      where: { id },
+      data: updateData
+    })
+
+    res.json(convertDecimals(updatedDistributor))
+  } catch (error) {
+    console.error('Error updating Distributor:', error)
+    res.status(500).json({ error: 'Failed to update Distributor' })
+  }
+})
+
 router.get('/distributors/:id', authenticateToken, requireCSA, async (req, res) => {
   try {
     const { id } = req.params
@@ -2566,45 +2625,167 @@ router.post('/distributors/:distributorId/purchase-returns/create', authenticate
       }
     })
 
-    const purchaseReturn = await prisma.purchaseReturn.create({
-      data: {
-        returnNo,
-        distributorId,
-        reason,
-        taxableValue: totalTaxable,
-        cgst: totalCGST,
-        sgst: totalSGST,
-        igst: totalIGST,
-        grandTotal,
-        purchaseReturnItems: {
-          create: processedItems.map(item => ({
-            ...item,
-            distributorId
-          }))
+    const purchaseReturn = await prisma.$transaction(async (tx) => {
+      // Check stock first
+      for (const item of items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } })
+        if (!product || product.currentStock < item.qty) {
+          throw new Error(`Insufficient stock for product: ${product?.name || item.productId}. Cannot return more than you have.`)
         }
-      },
-      include: {
-        purchaseReturnItems: { include: { product: true } }
       }
-    })
 
-    for (const item of items) {
-      await prisma.product.update({
-        where: { id: item.productId },
+      // Decrement stock
+      for (const item of items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            currentStock: { decrement: item.qty }
+          }
+        })
+      }
+
+      return await tx.purchaseReturn.create({
         data: {
-          currentStock: { decrement: item.qty }
+          returnNo,
+          distributorId,
+          reason,
+          taxableValue: totalTaxable,
+          cgst: totalCGST,
+          sgst: totalSGST,
+          igst: totalIGST,
+          grandTotal,
+          purchaseReturnItems: {
+            create: processedItems.map(item => ({
+              ...item,
+              distributorId
+            }))
+          }
+        },
+        include: {
+          purchaseReturnItems: { include: { product: true } }
         }
       })
-    }
+    })
 
     res.json(convertDecimals(purchaseReturn))
   } catch (error) {
     console.error('Failed to create purchase return:', error)
-    res.status(500).json({ error: 'Failed to create purchase return' })
+    res.status(400).json({ error: error.message || 'Failed to create purchase return' })
   }
 })
 
 // CSA Reports Endpoints
+
+// GET /api/csa/my-reports/dashboard
+router.get('/my-reports/dashboard', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId;
+
+    const today = new Date();
+    const firstDayThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    
+    // 1. Total Sales (This Month vs Last Month)
+    const thisMonthInvoices = await prisma.invoice.findMany({
+      where: { csaId, createdAt: { gte: firstDayThisMonth } },
+      select: { createdAt: true, grandTotal: true, distributor: { select: { companyName: true } } }
+    });
+    const lastMonthInvoices = await prisma.invoice.findMany({
+      where: { csaId, createdAt: { gte: firstDayLastMonth, lt: firstDayThisMonth } },
+      select: { createdAt: true, grandTotal: true }
+    });
+
+    const thisMonthSales = thisMonthInvoices.reduce((acc, inv) => acc + getNum(inv.grandTotal), 0);
+    const lastMonthSales = lastMonthInvoices.reduce((acc, inv) => acc + getNum(inv.grandTotal), 0);
+    const salesGrowth = lastMonthSales === 0 ? 100 : ((thisMonthSales - lastMonthSales) / lastMonthSales) * 100;
+
+    // Projected Sales
+    const daysPassedThisMonth = today.getDate();
+    const totalDaysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const projectedSales = daysPassedThisMonth > 0 ? (thisMonthSales / daysPassedThisMonth) * totalDaysInMonth : 0;
+
+    // Avg Sales Per Invoice
+    const avgSales = thisMonthInvoices.length > 0 ? thisMonthSales / thisMonthInvoices.length : 0;
+
+    // 2. Daily Sales Comparison (Day 1 to 31)
+    const dailySalesMap = {};
+    for (let i = 1; i <= 31; i++) {
+      dailySalesMap[i] = { day: i, currentMonth: 0, lastMonth: 0 };
+    }
+
+    thisMonthInvoices.forEach(inv => {
+      const day = new Date(inv.createdAt).getDate();
+      dailySalesMap[day].currentMonth += getNum(inv.grandTotal);
+    });
+    
+    lastMonthInvoices.forEach(inv => {
+      const day = new Date(inv.createdAt).getDate();
+      dailySalesMap[day].lastMonth += getNum(inv.grandTotal);
+    });
+
+    const dailySales = Object.values(dailySalesMap);
+
+    // 3. Sales by Party (Doughnut & Bar)
+    const partySalesMap = {};
+    thisMonthInvoices.forEach(inv => {
+      const pName = inv.distributor?.companyName || 'Unknown';
+      partySalesMap[pName] = (partySalesMap[pName] || 0) + getNum(inv.grandTotal);
+    });
+    
+    const partyWiseSales = Object.keys(partySalesMap)
+      .map(name => ({ name, value: partySalesMap[name] }))
+      .sort((a, b) => b.value - a.value);
+
+    const topSellingParties = partyWiseSales.slice(0, 8); // For Doughnut
+    const lowSellingParties = partyWiseSales.slice(-5).reverse(); // For Bottom Bar
+
+    // 4. Product Performance & Item Groups
+    const invoiceItems = await prisma.invoiceItem.findMany({
+      where: { csaId, createdAt: { gte: firstDayThisMonth } },
+      include: { product: { select: { name: true } } }
+    });
+
+    const productSalesMap = {};
+    const itemGroupMap = {};
+    
+    invoiceItems.forEach(item => {
+      const pName = item.product?.name || 'Unknown';
+      productSalesMap[pName] = (productSalesMap[pName] || 0) + item.qty;
+      
+      // Extract first word as "Item Group" (e.g. "Liplock Liquid Matte Lipstick" -> "Liplock")
+      const firstWord = pName.split(' ')[0] || 'Other';
+      itemGroupMap[firstWord] = (itemGroupMap[firstWord] || 0) + getNum(item.total);
+    });
+
+    const productPerformance = Object.keys(productSalesMap)
+      .map(name => ({ name, qty: productSalesMap[name] }))
+      .sort((a, b) => b.qty - a.qty);
+
+    const lowSellingProducts = productPerformance.slice(-5).reverse();
+
+    const itemGroupSales = Object.keys(itemGroupMap)
+      .map(name => ({ name, value: itemGroupMap[name] }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    res.json({
+      thisMonthSales,
+      lastMonthSales,
+      salesGrowth: parseFloat(salesGrowth.toFixed(2)),
+      projectedSales: parseFloat(projectedSales.toFixed(2)),
+      avgSales: parseFloat(avgSales.toFixed(2)),
+      dailySales,
+      topSellingParties,
+      lowSellingParties,
+      itemGroupSales,
+      lowSellingProducts
+    });
+  } catch (error) {
+    console.error('Error fetching CSA dashboard data:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+  }
+});
+
 router.get('/my-reports/party-sales', authenticateToken, requireCSA, async (req, res) => {
   try {
     const { startDate, endDate } = req.query
@@ -3284,9 +3465,10 @@ router.post('/distributors/:distributorId/payments-out/create', authenticateToke
 router.get('/my-purchases', authenticateToken, requireCSA, async (req, res) => {
   try {
     const csaId = req.user.userId
-    const purchases = await prisma.purchaseLedger.findMany({
+    let purchases = await prisma.purchaseLedger.findMany({
       where: { csaId },
       include: {
+        supplier: true,
         purchaseItems: {
           include: { product: true },
           orderBy: { id: 'asc' }
@@ -3294,6 +3476,25 @@ router.get('/my-purchases', authenticateToken, requireCSA, async (req, res) => {
       },
       orderBy: { createdAt: 'desc' }
     })
+
+    // If supplier is null, it might be another CSA. Look up by name.
+    for (let p of purchases) {
+      if (!p.supplier && p.supplierName && p.supplierName !== 'SuperAdmin') {
+        const csaUser = await prisma.user.findFirst({
+          where: { name: p.supplierName, role: 'CSA' }
+        })
+        if (csaUser) {
+          p.supplier = {
+            name: csaUser.name,
+            gstin: csaUser.gstIn || csaUser.gstin,
+            phone: csaUser.phone,
+            address: csaUser.address,
+            city: csaUser.city
+          }
+        }
+      }
+    }
+
     res.json(convertDecimals(purchases))
   } catch (error) {
     console.error(error)
@@ -3344,6 +3545,69 @@ router.get('/my-suppliers', authenticateToken, requireCSA, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch suppliers' })
   }
 })
+
+// CSA's own purchase create (Order Request)
+router.post('/my-purchases/create', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId;
+    const { supplierName, supplierId, items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items provided for the order' });
+    }
+
+    // Calculate total amount
+    let totalAmount = 0;
+    for (const item of items) {
+      totalAmount += (parseFloat(item.costPrice) || 0) * (parseInt(item.qty, 10) || 0);
+    }
+
+    // Generate invoice number (Request number)
+    const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const invoiceNo = `REQ-${dateStr}-${randomStr}`;
+    
+    let targetCsaId = null;
+    if (!supplierId && supplierName && supplierName !== 'SuperAdmin') {
+      const csaUser = await prisma.user.findFirst({
+        where: { name: supplierName, role: 'CSA' }
+      });
+      if (csaUser) {
+        targetCsaId = csaUser.id;
+      }
+    }
+
+    const purchaseLedger = await prisma.purchaseLedger.create({
+      data: {
+        supplierName: supplierName || 'SuperAdmin',
+        supplierId: supplierId || null,
+        targetCsaId,
+        invoiceNo,
+        totalAmount,
+        csaId,
+        status: 'PENDING',
+        purchaseItems: {
+          create: items.map(item => ({
+            productId: item.productId,
+            qty: parseInt(item.qty, 10),
+            costPrice: parseFloat(item.costPrice),
+            mrp: parseFloat(item.baseSellingPrice) || 0,
+            rate: parseFloat(item.costPrice) || 0,
+            discount: 0,
+            total: (parseFloat(item.costPrice) || 0) * (parseInt(item.qty, 10) || 0),
+            csaId
+          }))
+        }
+      },
+      include: { purchaseItems: true }
+    });
+
+    res.json({ message: 'Order request submitted successfully', purchaseLedger });
+  } catch (err) {
+    console.error('Error creating purchase order:', err);
+    res.status(500).json({ error: 'Failed to submit order request' });
+  }
+});
 
 // CSA's own purchase upload
 router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single('file'), async (req, res) => {
@@ -3434,26 +3698,13 @@ router.post('/my-purchases/upload', authenticateToken, requireCSA, upload.single
             cleanQty = 12; // Agar barcode galti se quantity mein aa gaya hai toh use standard pack (12/1) par fallback karein 
           }
 
-          // 2. Search dynamically by String HSK, Name, AND rate to avoid merging different products!
+          // 2. Search dynamically by Name (case-insensitive) to avoid duplicating existing products
           let product = await prisma.product.findFirst({
             where: {
               csaId: csaId,
-              name: item.productName,
-              hsn: safeHsnStr !== "" ? safeHsnStr : undefined,
-              costPrice: item.rate ? parseFloat(item.rate) : undefined
+              name: { equals: item.productName, mode: 'insensitive' }
             }
           });
-
-          // Fallback if no match by name + hsn + rate
-          if (!product && safeHsnStr !== "") {
-            product = await prisma.product.findFirst({
-              where: {
-                csaId: csaId,
-                hsn: safeHsnStr,
-                costPrice: item.rate ? parseFloat(item.rate) : undefined
-              }
-            });
-          }
 
           // Product-specific MRP and Rate overrides
           let finalMRP = parseFloat(item.mrp) || 0;
@@ -5391,41 +5642,51 @@ router.post('/my-purchase-returns/create', authenticateToken, requireCSA, async 
       }
     })
 
-    const purchaseReturn = await prisma.purchaseReturn.create({
-      data: {
-        returnNo,
-        supplierName,
-        csaId,
-        reason,
-        taxableValue: totalTaxable,
-        cgst: totalCGST,
-        sgst: totalSGST,
-        igst: totalIGST,
-        grandTotal,
-        purchaseReturnItems: {
-          create: processedItems.map(item => ({
-            ...item,
-            csaId
-          }))
+    const purchaseReturn = await prisma.$transaction(async (tx) => {
+      // Check stock first
+      for (const item of items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } })
+        if (!product || product.currentStock < item.qty) {
+          throw new Error(`Insufficient stock for product: ${product?.name || item.productId}. Cannot return more than you have.`)
         }
-      },
-      include: {
-        purchaseReturnItems: { include: { product: true } }
       }
-    })
 
-    // Update product stock
-    for (const item of items) {
-      await prisma.product.update({
-        where: { id: item.productId },
-        data: { currentStock: { decrement: item.qty } }
+      // Decrement stock
+      for (const item of items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { currentStock: { decrement: item.qty } }
+        })
+      }
+
+      return await tx.purchaseReturn.create({
+        data: {
+          returnNo,
+          supplierName,
+          csaId,
+          reason,
+          taxableValue: totalTaxable,
+          cgst: totalCGST,
+          sgst: totalSGST,
+          igst: totalIGST,
+          grandTotal,
+          purchaseReturnItems: {
+            create: processedItems.map(item => ({
+              ...item,
+              csaId
+            }))
+          }
+        },
+        include: {
+          purchaseReturnItems: { include: { product: true } }
+        }
       })
-    }
+    })
 
     res.json(convertDecimals(purchaseReturn))
   } catch (error) {
     console.error('Failed to create purchase return:', error)
-    res.status(500).json({ error: 'Failed to create purchase return' })
+    res.status(400).json({ error: error.message || 'Failed to create purchase return' })
   }
 })
 
@@ -5574,5 +5835,150 @@ router.get('/my-dashboard', authenticateToken, requireCSA, async (req, res) => {
 // ==================== CSA REPORTS ENDPOINTS ====================
 
 // CSA Distributor-wise Sales Report
+
+// ==================== CSA-to-CSA ORDER REQUESTS ====================
+
+// Get incoming order requests from other CSAs
+router.get('/purchase-requests', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const csaId = req.user.userId;
+    const requests = await prisma.purchaseLedger.findMany({
+      where: {
+        targetCsaId: csaId
+      },
+      include: {
+        csa: { select: { name: true, city: true } },
+        distributor: { select: { companyName: true, city: true } },
+        purchaseItems: {
+          include: { product: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(convertDecimals(requests));
+  } catch (err) {
+    console.error('Error fetching incoming purchase requests:', err);
+    res.status(500).json({ error: 'Failed to fetch incoming purchase requests' });
+  }
+});
+
+// Approve an order request
+router.put('/purchase-requests/:id/approve', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const targetCsaId = req.user.userId;
+    const { id } = req.params;
+
+    const purchaseLedger = await prisma.purchaseLedger.findUnique({
+      where: { id },
+      include: { purchaseItems: true }
+    });
+
+    if (!purchaseLedger || purchaseLedger.targetCsaId !== targetCsaId) {
+      return res.status(404).json({ error: 'Order request not found or unauthorized' });
+    }
+    if (purchaseLedger.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Order request is already processed' });
+    }
+
+    // Process all items in a transaction
+    await prisma.$transaction(async (tx) => {
+      // We will collect products that need updating
+      const targetUpdates = [];
+      const requesterUpdates = [];
+
+      // 1. Check if target CSA has enough stock
+      for (const item of purchaseLedger.purchaseItems) {
+        // Find the product record of the requesting CSA
+        const requesterProduct = await tx.product.findUnique({
+          where: { id: item.productId }
+        });
+        
+        if (!requesterProduct) {
+            throw new Error(`Product not found for ID: ${item.productId}`);
+        }
+
+        // Find the corresponding product in target CSA's inventory by SKU
+        let targetProduct = await tx.product.findFirst({
+          where: { sku: requesterProduct.sku, csaId: targetCsaId }
+        });
+
+        // Fallback: match by product name if SKU is different (e.g. auto-generated from PDF)
+        if (!targetProduct) {
+          targetProduct = await tx.product.findFirst({
+            where: { name: requesterProduct.name, csaId: targetCsaId }
+          });
+        }
+
+        if (!targetProduct) {
+          throw new Error(`Product "${requesterProduct.name}" does not exist in target CSA's inventory.`);
+        }
+
+        if (targetProduct.currentStock < item.qty) {
+          throw new Error(`Insufficient stock for product: ${requesterProduct.name}. Target CSA only has ${targetProduct.currentStock}, but ${item.qty} requested.`);
+        }
+
+        targetUpdates.push({ id: targetProduct.id, qty: item.qty });
+        requesterUpdates.push({ id: requesterProduct.id, qty: item.qty });
+      }
+
+      // 2. Decrease target CSA stock
+      for (const update of targetUpdates) {
+        await tx.product.update({
+          where: { id: update.id },
+          data: { currentStock: { decrement: update.qty } }
+        });
+      }
+
+      // 3. Increase requesting CSA stock
+      for (const update of requesterUpdates) {
+        await tx.product.update({
+          where: { id: update.id },
+          data: { currentStock: { increment: update.qty } }
+        });
+      }
+
+      // 4. Update order status
+      await tx.purchaseLedger.update({
+        where: { id },
+        data: { status: 'APPROVED' }
+      });
+    });
+
+    res.json({ message: 'Order approved successfully' });
+  } catch (err) {
+    console.error('Error approving order:', err);
+    res.status(400).json({ error: err.message || 'Failed to approve order' });
+  }
+});
+
+// Reject an order request
+router.put('/purchase-requests/:id/reject', authenticateToken, requireCSA, async (req, res) => {
+  try {
+    const targetCsaId = req.user.userId;
+    const { id } = req.params;
+
+    const purchaseLedger = await prisma.purchaseLedger.findUnique({
+      where: { id }
+    });
+
+    if (!purchaseLedger || purchaseLedger.targetCsaId !== targetCsaId) {
+      return res.status(404).json({ error: 'Order request not found or unauthorized' });
+    }
+
+    if (purchaseLedger.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Order request is already processed' });
+    }
+
+    await prisma.purchaseLedger.update({
+      where: { id },
+      data: { status: 'REJECTED' }
+    });
+
+    res.json({ message: 'Order rejected successfully' });
+  } catch (err) {
+    console.error('Error rejecting order:', err);
+    res.status(500).json({ error: 'Failed to reject order' });
+  }
+});
 
 module.exports = router

@@ -32,6 +32,26 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } 
 })
 
+// Fetch distributor's parent CSA details
+router.get('/my-csa', authenticateToken, requireDistributor, async (req, res) => {
+  try {
+    const distributorId = req.user.distributorId;
+    const distributor = await prisma.distributor.findUnique({
+      where: { id: distributorId },
+      include: { csa: true }
+    });
+    
+    if (distributor && distributor.csa) {
+      res.json(distributor.csa);
+    } else {
+      res.status(404).json({ error: 'CSA not found' });
+    }
+  } catch (err) {
+    console.error('Failed to fetch CSA:', err);
+    res.status(500).json({ error: 'Failed to fetch CSA details' });
+  }
+});
+
 router.post('/upload', authenticateToken, requireDistributor, upload.single('file'), async (req, res) => {
   let filePath;
   try {
@@ -120,27 +140,14 @@ router.post('/upload', authenticateToken, requireDistributor, upload.single('fil
               console.log(`[Warning] Quantity ${cleanQty} is too large for INT4, resetting to standard loop default.`);
               cleanQty = 12; // Agar barcode galti se quantity mein aa gaya hai toh use standard pack (12/1) par fallback karein
             }
-
-            // 2. Search dynamically by String HSK, Name, AND rate to avoid merging different products!
+            
+            // 2. Search dynamically by Name (case-insensitive) to avoid duplicating existing products
             let product = await tx.product.findFirst({
               where: {
                 distributorId: distributorId,
-                name: item.productName,
-                hsn: safeHsnStr !== "" ? safeHsnStr : undefined,
-                costPrice: item.rate ? parseFloat(item.rate) : undefined
+                name: { equals: item.productName, mode: 'insensitive' }
               }
             });
-
-            // Fallback if no match by name + hsn + rate
-            if (!product && safeHsnStr !== "") {
-              product = await tx.product.findFirst({
-                where: {
-                  distributorId: distributorId,
-                  hsn: safeHsnStr,
-                  costPrice: item.rate ? parseFloat(item.rate) : undefined
-                }
-              });
-            }
 
             // Product-specific MRP and Rate overrides
             let finalMRP = parseFloat(item.mrp) || 0;
@@ -1220,7 +1227,8 @@ router.get('/', authenticateToken, requireDistributor, async (req, res) => {
           include: { product: true },
           orderBy: { id: 'asc' }
         },
-        distributor: { include: { csa: true } }
+        distributor: { include: { csa: true } },
+        targetCsa: true
       },
       orderBy: { createdAt: 'desc' }
     })
@@ -1518,5 +1526,69 @@ router.put('/:id', authenticateToken, requireDistributor, async (req, res) => {
     res.status(500).json({ error: 'Failed to update purchase' })
   }
 })
+
+// Create purchase request for Distributor (directed to their parent CSA)
+router.post('/my-purchases/create', authenticateToken, requireDistributor, async (req, res) => {
+  try {
+    const distributorId = req.user.distributorId;
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items provided for the order' });
+    }
+
+    const distributor = await prisma.distributor.findUnique({
+      where: { id: distributorId },
+      include: { csa: true }
+    });
+
+    if (!distributor || !distributor.csa) {
+      return res.status(400).json({ error: 'Distributor not properly linked to a CSA.' });
+    }
+
+    const targetCsaId = distributor.csa.id;
+    const supplierName = distributor.csa.name || 'Your CSA';
+
+    // Calculate total amount
+    let totalAmount = 0;
+    for (const item of items) {
+      totalAmount += (parseFloat(item.costPrice) || 0) * (parseInt(item.qty, 10) || 0);
+    }
+
+    // Generate Request number
+    const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const invoiceNo = `REQ-${dateStr}-${randomStr}`;
+
+    const purchaseLedger = await prisma.purchaseLedger.create({
+      data: {
+        supplierName,
+        targetCsaId,
+        invoiceNo,
+        totalAmount,
+        distributorId,
+        status: 'PENDING',
+        purchaseItems: {
+          create: items.map(item => ({
+            productId: item.productId,
+            qty: parseInt(item.qty, 10) || 0,
+            costPrice: parseFloat(item.costPrice) || 0,
+            gstPercentage: parseFloat(item.gstPercentage) || 18,
+            total: (parseFloat(item.costPrice) || 0) * (parseInt(item.qty, 10) || 0),
+            distributorId
+          }))
+        }
+      },
+      include: {
+        purchaseItems: { include: { product: true } }
+      }
+    });
+
+    res.json(convertDecimals(purchaseLedger));
+  } catch (error) {
+    console.error('Failed to create purchase request:', error);
+    res.status(500).json({ error: 'Failed to create purchase request' });
+  }
+});
 
 module.exports = router

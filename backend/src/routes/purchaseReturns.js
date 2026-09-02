@@ -110,44 +110,54 @@ router.post('/create', authenticateToken, async (req, res) => {
     })
 
     // Create purchase return and update product stock
-    const purchaseReturn = await prisma.purchaseReturn.create({
-      data: {
-        returnNo,
-        supplierName,
-        distributorId,
-        reason,
-        taxableValue: totalTaxable,
-        cgst: totalCGST,
-        sgst: totalSGST,
-        igst: totalIGST,
-        grandTotal,
-        purchaseReturnItems: {
-          create: processedItems.map(item => ({
-            ...item,
-            distributorId
-          }))
+      const purchaseReturn = await prisma.$transaction(async (tx) => {
+        // Check stock first
+        for (const item of items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } })
+          if (!product || product.currentStock < item.qty) {
+            throw new Error(`Insufficient stock for product: ${product?.name || item.productId}. Cannot return more than you have.`)
+          }
         }
-      },
-      include: {
-        purchaseReturnItems: { include: { product: true } }
-      }
-    })
 
-    // Update product stock (decrease since it's a return to supplier)
-    for (const item of items) {
-      await prisma.product.update({
-        where: { id: item.productId },
-        data: {
-          currentStock: { decrement: item.qty }
+        // Update product stock (decrease since it's a return to supplier)
+        for (const item of items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              currentStock: { decrement: item.qty }
+            }
+          })
         }
+
+        return await tx.purchaseReturn.create({
+          data: {
+            returnNo,
+            supplierName,
+            distributorId,
+            reason,
+            taxableValue: totalTaxable,
+            cgst: totalCGST,
+            sgst: totalSGST,
+            igst: totalIGST,
+            grandTotal,
+            purchaseReturnItems: {
+              create: processedItems.map(item => ({
+                ...item,
+                distributorId
+              }))
+            }
+          },
+          include: {
+            purchaseReturnItems: { include: { product: true } }
+          }
+        })
       })
-    }
 
-    res.json(convertDecimals(purchaseReturn))
-  } catch (error) {
-    console.error('Failed to create purchase return:', error)
-    res.status(500).json({ error: 'Failed to create purchase return' })
-  }
-})
+      res.json(convertDecimals(purchaseReturn))
+    } catch (error) {
+      console.error('Failed to create purchase return:', error)
+      res.status(400).json({ error: error.message || 'Failed to create purchase return' })
+    }
+  })
 
 module.exports = router

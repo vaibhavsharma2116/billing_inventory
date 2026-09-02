@@ -58,7 +58,11 @@ router.get('/:id', authenticateToken, requireDistributor, async (req, res) => {
     const { id } = req.params
     const party = await prisma.party.findUnique({
       where: { id },
-      include: { invoices: true }
+      include: { 
+        invoices: true,
+        salesReturns: true,
+        paymentsIn: true
+      }
     })
     
     if (!party) {

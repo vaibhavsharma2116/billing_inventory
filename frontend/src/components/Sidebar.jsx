@@ -15,6 +15,7 @@ import {
   Plus,
   Rocket,
   Shield,
+  PieChart,
   LogOut,
   Building2,
   Key,
@@ -175,6 +176,7 @@ const Sidebar = () => {
 
   const superAdminNavItems = [
     { name: 'Command Center', path: '/superadmin/dashboard', icon: Shield },
+    { name: 'Analytics Reports', path: '/superadmin/analytics', icon: PieChart },
     { 
       name: 'Users', 
       icon: Users,
@@ -185,8 +187,10 @@ const Sidebar = () => {
         { name: 'Distributor', path: '/superadmin/distributors', icon: Users }
       ]
     },
-    { name: 'Finance Ledger', path: '/superadmin/finance-ledger', icon: IndianRupee },
-    { name: 'Inventory & Products', path: '/superadmin/inventory', icon: Package },
+    { name: 'Finance Ledger', path: '/superadmin/finance-ledger', icon: CreditCard },
+    { name: 'Inventory & Products for csa', path: '/superadmin/inventory', icon: Package },
+    { name: 'Inventory & Products for distributor', path: '/superadmin/inventory-distributor', icon: Package },
+    { name: 'CSA Order Requests', path: '/superadmin/purchase-requests', icon: FileText },
     { name: 'Suppliers', path: '/superadmin/suppliers', icon: Users },
     { name: 'Create User', path: '/superadmin/create', icon: UserPlus }
   ]
@@ -198,7 +202,9 @@ const Sidebar = () => {
 
   const csaNavItems = [
     { name: 'Dashboard', path: '/csa/my-dashboard', icon: Shield },
+    { name: 'Order Requests', path: '/csa/purchase-requests', icon: FileText },
     { name: 'Distributors', path: '/csa/distributors', icon: Building2 },
+    { name: 'Customer Master', path: '/csa/customer-master', icon: Users },
     { name: 'My Products', path: '/csa/my-products', icon: Package },
     { 
       name: 'Billing', 
@@ -221,6 +227,7 @@ const Sidebar = () => {
         { name: 'Payment Out', path: '/csa/my-payments-out', icon: CreditCard }
       ]
     },
+    { name: 'Analytics Reports', path: '/csa/analytics', icon: PieChart },
     { name: 'Reports', path: '/csa/reports', icon: FileBarChart2 },
     { name: 'Claims', path: '/csa/claims', icon: AlertCircle }
   ]
@@ -249,8 +256,9 @@ const Sidebar = () => {
       ]
     },
     { name: 'Inventory', path: '/inventory', icon: BarChart3 },
-    { name: 'Parties', path: '/parties', icon: Users },
+    { name: 'Customer Master', path: '/parties', icon: Users },
     { name: 'Reports', path: '/reports', icon: FileBarChart2 },
+    { name: 'Analytics Dashboard', path: '/analytics', icon: PieChart },
     { name: 'Claims', path: '/claims', icon: AlertCircle }
   ]
 

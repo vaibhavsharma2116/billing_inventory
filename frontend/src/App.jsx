@@ -2,13 +2,16 @@ import storage from './utils/storage'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Parties from './components/Parties'
+import PartyProfile from './components/PartyProfile'
 import Products from './components/Products'
 import Purchase from './components/Purchase'
 import Billing from './components/Billing'
+import DistributorReports from './components/DistributorReports'
 import Reports from './components/Reports'
 import Claims from './components/Claims'
 import Dashboard from './components/Dashboard'
 import SuperAdminDashboard from './components/SuperAdminDashboard'
+import SuperAdminAnalytics from './components/SuperAdminAnalytics'
 import DistributorDetails from './components/DistributorDetails'
 import FinanceLedger from './components/FinanceLedger'
 import Login from './components/Login'
@@ -33,6 +36,9 @@ import CSAMyDashboard from './components/CSAMyDashboard'
 import CSAMyPurchase from './components/CSAMyPurchase'
 import CSAMyProducts from './components/CSAMyProducts'
 import CSAMyParties from './components/CSAMyParties'
+import CSACustomerMaster from './components/CSACustomerMaster'
+import CSACustomerProfile from './components/CSACustomerProfile'
+import CSAPurchaseRequests from './components/CSAPurchaseRequests'
 import CSAMySalesReturns from './components/CSAMySalesReturns'
 import CSAMyBilling from './components/CSAMyBilling'
 import CSAMyInvoices from './components/CSAMyInvoices'
@@ -40,9 +46,12 @@ import CSAMyPaymentsIn from './components/CSAMyPaymentsIn'
 import CSAMyPurchaseReturns from './components/CSAMyPurchaseReturns'
 import CSAMyPaymentsOut from './components/CSAMyPaymentsOut'
 import CSAReports from './components/CSAReports'
+import CSAAnalytics from './components/CSAAnalytics'
 import CSAClaims from './components/CSAClaims'
 import SuperAdminProducts from './components/SuperAdminProducts'
+import SuperAdminDistributorProducts from './components/SuperAdminDistributorProducts'
 import SuperAdminSuppliers from './components/SuperAdminSuppliers'
+import SuperAdminPurchaseRequests from './components/SuperAdminPurchaseRequests'
 import { useEffect } from 'react'
 
 const isAuthenticated = () => {
@@ -141,16 +150,21 @@ function App() {
                   <Route path="/payments-out" element={<PaymentsOut />} />
                   <Route path="/inventory" element={<Products />} />
                   <Route path="/parties" element={<Parties />} />
+                  <Route path="/parties/:id" element={<PartyProfile />} />
                   <Route path="/reports" element={<Reports />} />
+                  <Route path="/analytics" element={<DistributorReports />} />
                   <Route path="/claims" element={<Claims />} />
                   <Route path="/superadmin/dashboard" element={<SuperAdminDashboard view="dashboard" />} />
+                  <Route path="/superadmin/analytics" element={<SuperAdminAnalytics />} />
                   <Route path="/superadmin/admins" element={<SuperAdminDashboard view="admins" />} />
                   <Route path="/superadmin/csas" element={<SuperAdminDashboard view="csas" />} />
                   <Route path="/superadmin/distributors" element={<SuperAdminDashboard view="distributors" />} />
                   <Route path="/superadmin/create" element={<SuperAdminDashboard view="create" />} />
                   <Route path="/superadmin/finance-ledger" element={<FinanceLedger />} />
                   <Route path="/superadmin/inventory" element={<SuperAdminProducts />} />
+                  <Route path="/superadmin/inventory-distributor" element={<SuperAdminDistributorProducts />} />
                   <Route path="/superadmin/suppliers" element={<SuperAdminSuppliers />} />
+                  <Route path="/superadmin/purchase-requests" element={<SuperAdminPurchaseRequests />} />
                   <Route path="/superadmin/distributor/:distributorId" element={<DistributorDetails />} />
                   <Route path="/superadmin/csa/:csaId" element={<SuperAdminCSADetails />} />
                   <Route path="/admin/dashboard" element={<AdminDashboard view="dashboard" />} />
@@ -169,14 +183,18 @@ function App() {
                   <Route path="/csa/payments-out" element={<CSAPaymentsOut />} />
                   <Route path="/csa/my-dashboard" element={<CSAMyDashboard />} />
                   <Route path="/csa/my-purchase" element={<CSAMyPurchase />} />
+                  <Route path="/csa/purchase-requests" element={<CSAPurchaseRequests />} />
                   <Route path="/csa/my-products" element={<CSAMyProducts />} />
                   <Route path="/csa/my-parties" element={<CSAMyParties />} />
+                  <Route path="/csa/customer-master" element={<CSACustomerMaster />} />
+                  <Route path="/csa/customer-master/:distributorId" element={<CSACustomerProfile />} />
                   <Route path="/csa/my-sales-returns" element={<CSAMySalesReturns />} />
                   <Route path="/csa/my-billing" element={<CSAMyBilling />} />
                   <Route path="/csa/my-invoices" element={<CSAMyInvoices />} />
                   <Route path="/csa/my-payments-in" element={<CSAMyPaymentsIn />} />
                   <Route path="/csa/my-purchase-returns" element={<CSAMyPurchaseReturns />} />
                   <Route path="/csa/my-payments-out" element={<CSAMyPaymentsOut />} />
+                  <Route path="/csa/analytics" element={<CSAAnalytics />} />
                   <Route path="/csa/reports" element={<CSAReports />} />
                   <Route path="/csa/claims" element={<CSAClaims />} />
                 </Routes>

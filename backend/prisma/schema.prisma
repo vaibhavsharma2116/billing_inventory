@@ -76,7 +76,8 @@ model User {
   invoiceItems InvoiceItem[]
   receivedInvoices Invoice[] @relation("ReceivedInvoices")
   receivedInvoiceItems InvoiceItem[] @relation("ReceivedInvoiceItems")
-  purchaseLedgers PurchaseLedger[]
+  purchaseLedgers PurchaseLedger[] @relation("PurchaseLedgerCsa")
+  purchasesReceived PurchaseLedger[] @relation("PurchaseLedgerTargetCsa")
   purchaseItems PurchaseItem[]
   salesReturns SalesReturn[]
   salesReturnItems SalesReturnItem[]
@@ -216,10 +217,13 @@ model PurchaseLedger {
   invoiceNo      String
   date           DateTime       @default(now())
   totalAmount    Decimal
+  status         String         @default("APPROVED")
   distributorId  String?
   distributor    Distributor?   @relation(fields: [distributorId], references: [id], onDelete: Cascade)
   csaId          String?
-  csa            User?          @relation(fields: [csaId], references: [id], onDelete: Cascade)
+  csa            User?          @relation("PurchaseLedgerCsa", fields: [csaId], references: [id], onDelete: Cascade)
+  targetCsaId    String?
+  targetCsa      User?          @relation("PurchaseLedgerTargetCsa", fields: [targetCsaId], references: [id], onDelete: Cascade)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   purchaseItems  PurchaseItem[]

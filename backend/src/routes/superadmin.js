@@ -1428,6 +1428,126 @@ router.get('/reports/csa-performance', authenticateToken, requireSuperAdmin, asy
 })
 
 // Super Admin Product Management Endpoints
+
+router.get('/reports/dashboard', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    const startOfThisMonth = new Date(currentYear, currentMonth, 1);
+    const endOfThisMonth = new Date(currentYear, currentMonth + 1, 0);
+    const startOfLastMonth = new Date(currentYear, currentMonth - 1, 1);
+    const endOfLastMonth = new Date(currentYear, currentMonth, 0);
+
+    const invoicesThisMonth = await prisma.invoice.findMany({
+      where: { date: { gte: startOfThisMonth, lte: endOfThisMonth } },
+      include: { invoiceItems: true, distributor: true, csa: true }
+    });
+
+    const invoicesLastMonth = await prisma.invoice.findMany({
+      where: { date: { gte: startOfLastMonth, lte: endOfLastMonth } },
+      include: { invoiceItems: true }
+    });
+
+    const thisMonthSales = invoicesThisMonth.reduce((sum, inv) => sum + getNum(inv.totalAmount), 0);
+    const lastMonthSales = invoicesLastMonth.reduce((sum, inv) => sum + getNum(inv.totalAmount), 0);
+    const salesGrowth = lastMonthSales === 0 ? 100 : (((thisMonthSales - lastMonthSales) / lastMonthSales) * 100).toFixed(1);
+    
+    const currentDay = Math.max(1, now.getDate());
+    const daysInMonth = endOfThisMonth.getDate();
+    const projectedSales = Math.round((thisMonthSales / currentDay) * daysInMonth);
+    const avgSales = invoicesThisMonth.length > 0 ? Math.round(thisMonthSales / invoicesThisMonth.length) : 0;
+
+    const dailySales = [];
+    for (let i = 1; i <= 31; i++) {
+      const dailyThisMonth = invoicesThisMonth
+        .filter(inv => new Date(inv.date).getDate() === i)
+        .reduce((sum, inv) => sum + getNum(inv.totalAmount), 0);
+        
+      const dailyLastMonth = invoicesLastMonth
+        .filter(inv => new Date(inv.date).getDate() === i)
+        .reduce((sum, inv) => sum + getNum(inv.totalAmount), 0);
+        
+      dailySales.push({ day: i.toString(), currentMonth: dailyThisMonth, lastMonth: dailyLastMonth });
+    }
+
+    const distributorSalesMap = {};
+    const csaSalesMap = {};
+    let distributorTotalRevenue = 0;
+    let csaTotalRevenue = 0;
+
+    invoicesThisMonth.forEach(inv => {
+      const amount = getNum(inv.totalAmount);
+      
+      if (inv.distributor) {
+        const name = inv.distributor.companyName || inv.distributor.ownerName || 'Unknown Distributor';
+        if (!distributorSalesMap[name]) distributorSalesMap[name] = 0;
+        distributorSalesMap[name] += amount;
+        distributorTotalRevenue += amount;
+      } else if (inv.csa) {
+        const name = inv.csa.name || 'Unknown CSA';
+        if (!csaSalesMap[name]) csaSalesMap[name] = 0;
+        csaSalesMap[name] += amount;
+        csaTotalRevenue += amount;
+      }
+    });
+
+    const distributorSalesArr = Object.entries(distributorSalesMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    const csaSalesArr = Object.entries(csaSalesMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+
+    const topSellingDistributors = distributorSalesArr.slice(0, 8);
+    const lowSellingDistributors = [...distributorSalesArr].reverse().slice(0, 5);
+    
+    const topSellingCsas = csaSalesArr.slice(0, 8);
+    const lowSellingCsas = [...csaSalesArr].reverse().slice(0, 5);
+
+    const revenueByChannel = [
+      { name: 'Distributors', value: distributorTotalRevenue },
+      { name: 'CSAs', value: csaTotalRevenue }
+    ];
+
+    const itemGroupMap = {};
+    const productSalesMap = {};
+    
+    invoicesThisMonth.forEach(inv => {
+      inv.invoiceItems.forEach(item => {
+        const cat = item.productName.split(' ')[0] || 'Misc';
+        const val = getNum(item.amount);
+        const qty = getNum(item.quantity);
+        
+        if (!itemGroupMap[cat]) itemGroupMap[cat] = 0;
+        itemGroupMap[cat] += val;
+        
+        if (!productSalesMap[item.productName]) productSalesMap[item.productName] = 0;
+        productSalesMap[item.productName] += qty;
+      });
+    });
+
+    const itemGroupSales = Object.entries(itemGroupMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+    const lowSellingProducts = Object.entries(productSalesMap).map(([name, qty]) => ({ name, qty })).sort((a, b) => a.qty - b.qty).slice(0, 5);
+
+    res.json({
+      thisMonthSales,
+      lastMonthSales,
+      salesGrowth,
+      projectedSales,
+      avgSales,
+      dailySales,
+      topSellingDistributors,
+      lowSellingDistributors,
+      topSellingCsas,
+      lowSellingCsas,
+      revenueByChannel,
+      itemGroupSales,
+      lowSellingProducts
+    });
+  } catch (error) {
+    console.error('Error fetching superadmin dashboard data:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+  }
+});
+
 router.get('/products', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
     const { csaId, search } = req.query
@@ -2031,6 +2151,476 @@ router.post('/products/upload', authenticateToken, requireSuperAdmin, upload.sin
 })
 
 
-module.exports = router
+// --- DISTRIBUTOR PRODUCT ROUTES ---
+
+router.get('/products/distributor', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { search, distributorId } = req.query;
+    const whereClause = { distributorId: { not: null } };
+    
+    if (distributorId) {
+      whereClause.distributorId = distributorId;
+    }
+    
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { sku: { contains: search, mode: 'insensitive' } },
+        { hsn: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+    
+    const products = await prisma.product.findMany({
+      where: whereClause,
+      include: { distributor: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(products);
+  } catch (error) {
+    console.error('Error fetching distributor products:', error);
+    res.status(500).json({ error: 'Failed to fetch products' });
+  }
+});
+
+router.post('/products/distributor', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { name, sku, hsn, batchNo, expiryDate, costPrice, baseSellingPrice, gstPercentage, currentStock, distributorId, addToAllDistributors } = req.body;
+    
+    if (!addToAllDistributors && !distributorId) {
+      return res.status(400).json({ error: 'Either select a distributor or check Add to All' });
+    }
+    
+    let targetDistributors = [];
+    if (addToAllDistributors) {
+      targetDistributors = await prisma.distributor.findMany({ where: { isActive: true } });
+    } else {
+      const distributor = await prisma.distributor.findUnique({ where: { id: distributorId } });
+      if (!distributor) return res.status(404).json({ error: 'Distributor not found' });
+      targetDistributors = [distributor];
+    }
+    
+    let createdCount = 0;
+    
+    for (const dist of targetDistributors) {
+      const product = await prisma.product.create({
+        data: {
+          name,
+          sku,
+          hsn,
+          batchNo,
+          expiryDate: expiryDate ? new Date(expiryDate) : null,
+          costPrice: parseFloat(costPrice) || 0,
+          baseSellingPrice: parseFloat(baseSellingPrice) || 0,
+          gstPercentage: parseFloat(gstPercentage) || 0,
+          currentStock: parseInt(currentStock) || 0,
+          distributorId: dist.id
+        }
+      });
+      
+      const purchaseLedger = await prisma.purchaseLedger.create({
+        data: {
+          supplierName: 'Superadmin Direct Add',
+          invoiceNo: `SA-ADD-${Date.now()}`,
+          totalAmount: (parseFloat(costPrice) || 0) * (parseInt(currentStock) || 0),
+          distributorId: dist.id
+        }
+      });
+      
+      await prisma.purchaseItem.create({
+        data: {
+          purchaseId: purchaseLedger.id,
+          productId: product.id,
+          distributorId: dist.id,
+          qty: parseInt(currentStock) || 0,
+          costPrice: parseFloat(costPrice) || 0,
+          rate: parseFloat(costPrice) || 0,
+          mrp: parseFloat(baseSellingPrice) || 0
+        }
+      });
+      
+      createdCount++;
+    }
+    
+    res.status(201).json({ message: `Successfully added product for ${createdCount} distributor(s)` });
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ error: 'Failed to create product' });
+  }
+});
+
+router.delete('/products/distributor/all', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { distributorId } = req.query;
+    const whereClause = { distributorId: { not: null } };
+    
+    if (distributorId) {
+      whereClause.distributorId = distributorId;
+      await prisma.purchaseLedger.deleteMany({ where: { distributorId } });
+      await prisma.product.deleteMany({ where: whereClause });
+      res.json({ message: 'Distributor products deleted successfully' });
+    } else {
+      await prisma.purchaseLedger.deleteMany({ where: { distributorId: { not: null } } });
+      await prisma.product.deleteMany({ where: whereClause });
+      res.json({ message: 'All distributor products deleted successfully' });
+    }
+  } catch (error) {
+    console.error('Error deleting products:', error);
+    res.status(500).json({ error: 'Failed to delete products' });
+  }
+});
+
+router.post('/products/distributor/upload', authenticateToken, requireSuperAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    
+    const { addToAllDistributors, distributorId } = req.body;
+    const addToAll = addToAllDistributors === 'true' || addToAllDistributors === true;
+    
+    if (!addToAll && !distributorId) {
+      return res.status(400).json({ error: 'Select a distributor or check Add to All' });
+    }
+    
+    const fs = require('fs');
+    const dataBuffer = fs.readFileSync(req.file.path);
+    const isPdfFromExtension = req.file.originalname.toLowerCase().endsWith('.pdf');
+    const isPdfFromSignature = dataBuffer.slice(0, 4).equals(Buffer.from('%PDF'));
+    const isPdf = isPdfFromExtension || isPdfFromSignature;
+    
+    let jsonData = [];
+    
+    if (isPdf) {
+      try {
+        const pdfParse = require('pdf-parse');
+        const rawTextData = await pdfParse(dataBuffer);
+        
+        let rawText = rawTextData.text; 
+ 
+        // --- STEP 1: LAYOUT HEALING (Joriyaiye Split Patterns) --- 
+        rawText = rawText.replace(/(\n\d+)\n(\d+\s*Poppik)/gi, '$1 $2'); 
+        rawText = rawText.replace(/(\n\d+)\n\n(Poppik)/gi, '$1 $2');
+        rawText = rawText.replace(/(\n\d+)\n(Poppik)/gi, '$1 $2');
+        rawText = rawText.replace(/NoItemsHSN[\s\S]*?Total/gi, ''); 
+ 
+        const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+        let parsedProducts = []; 
+ 
+        for (let i = 0; i < lines.length; i++) { 
+          let line = lines[i]; 
+ 
+          if ( 
+            /account@poppik/i.test(line) || 
+            /Sky Lark/i.test(line) || 
+            /Invoice No/i.test(line) || 
+            /Bill To/i.test(line) || 
+            /PREMPAN/i.test(line) || 
+            /SUBTOTAL/i.test(line) || 
+            /TAX INVOICE/i.test(line) || 
+            /Taxable Amount/i.test(line) || 
+            /CGST|SGST/i.test(line) || 
+            /Total Amount/i.test(line) || 
+            line.length < 5 
+          ) { 
+            continue; 
+          } 
+ 
+          const isPoppikLine = /poppik/i.test(line);
+          const isCsaLine = /\b\d{8}\b/.test(line) && /\(\d+%\)/.test(line);
+
+          if (isPoppikLine || isCsaLine) { 
+            let fullRowText = line; 
+ 
+            let forwardIndex = i + 1; 
+            while ( 
+              forwardIndex < lines.length && 
+              !(/poppik/i.test(lines[forwardIndex]) || (/\b\d{8}\b/.test(lines[forwardIndex]) && /\(\d+%\)/.test(lines[forwardIndex]))) && 
+              !/SUBTOTAL/i.test(lines[forwardIndex]) && 
+              !/Taxable Amount/i.test(lines[forwardIndex]) && 
+              !/CGST|SGST/i.test(lines[forwardIndex]) &&
+              !/Grand Total/i.test(lines[forwardIndex])
+            ) { 
+              fullRowText += " " + lines[forwardIndex]; 
+              forwardIndex++; 
+            } 
+            i = forwardIndex - 1; 
+
+            if (isCsaLine) {
+               let csaLine = fullRowText.replace(/^\d+\s+/, '');
+               const match = csaLine.match(/(.*?)\s+(\d{8})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\(\d+%\)\s+([\d.]+)/);
+               if (match) {
+                 parsedProducts.push({
+                   productName: match[1].trim(),
+                   hsn: String(match[2]),
+                   qty: parseInt(match[3], 10) || 0,
+                   mrp: parseFloat(match[4]) || 0,
+                   rate: parseFloat(match[5]) || 0,
+                   discount: parseFloat(match[6]) || 0,
+                   total: parseFloat(match[8]) || 0
+                 });
+               }
+               continue;
+            }
+ 
+            let fixedFullRowText = fullRowText
+              .replace(/(3304\d{4})(\d+)/g, '$1 $2')
+              .replace(/(\S)(3304\d{4})/g, '$1 $2')
+              .replace(/(-\s*)(\d+)(3304\d{4})/g, '$1$2 $3')
+              .replace(/(\s+\d+\s+\d+)$/, '');
+            
+            let discount = null;
+            const commonTaxPercentages = [5, 9, 12, 18, 28];
+            const allBracketMatches = [...fixedFullRowText.matchAll(/\(([0-9.]+)(?:%| OFF)?\)/gi)];
+            let discountBracketIndex = allBracketMatches.findIndex((match) => !match[0].toLowerCase().includes('off'));
+            if (discountBracketIndex !== -1) {
+              const parsedVal = parseFloat(allBracketMatches[discountBracketIndex][1]);
+              if (!commonTaxPercentages.includes(parsedVal)) { discount = parsedVal; }
+            } else {
+              const percentMatches = [...fixedFullRowText.matchAll(/(\d+(?:\.\d+)?)%/g)];
+              const validPercentMatches = percentMatches.filter(match => {
+                const startIndex = Math.max(0, match.index - 10);
+                const endIndex = Math.min(fixedFullRowText.length, match.index + match[0].length + 10);
+                const context = fixedFullRowText.substring(startIndex, endIndex).toLowerCase();
+                return !context.includes('off');
+              });
+              if (validPercentMatches.length > 0) {
+                const parsedVal = parseFloat(validPercentMatches[0][1]);
+                if (!commonTaxPercentages.includes(parsedVal)) { discount = parsedVal; }
+              }
+            }
+            
+            let normalizedText = fixedFullRowText.replace(/\([\s\S]*?\)/g, ' ').trim(); 
+            normalizedText = normalizedText.replace(/(\d+\.\d{2})(\d+\.\d{1,2})/g, '$1 $2');
+ 
+            const numbersArray = normalizedText 
+              .replace(/[^0-9.\s]/g, '') 
+              .split(/\s+/) 
+              .map(n => n.trim()) 
+              .filter(Boolean); 
+ 
+            if (numbersArray.length >= 6) {
+              const [last6_1, last6_2, last6_3, last6_4, last6_5, last6_6] = numbersArray.slice(-6);
+              const total = parseFloat(last6_6.replace(/,/g, '')) || 0;
+              
+              let tempTitleStr = fixedFullRowText;
+              const tempDelimiterMatch = fixedFullRowText.match(/(\b3304\d{4}\b|\d+\s*PCS)/i);
+              if (tempDelimiterMatch) {
+                tempTitleStr = fixedFullRowText.substring(0, tempDelimiterMatch.index).trim();
+              }
+              tempTitleStr = tempTitleStr.replace(/^\d+\s+/, '').replace(/^No\s+Items\s+/i, '').trim();
+              
+              let mrp = 0;
+              let rate = 0;
+              if (tempTitleStr.includes("Liplock Liquid Matte Lipstick")) { mrp = 329.00; rate = 117.10; }
+              else if (tempTitleStr.includes("Mattepout Bullet Lipstick")) {
+                mrp = 276.00;
+                const last6Numbers = [last6_1, last6_2, last6_3, last6_4, last6_5].map(n => parseFloat(n));
+                if (last6Numbers.includes(81.15)) rate = 81.15;
+                else if (last6Numbers.includes(98.23)) rate = 98.23;
+                else rate = 102.91;
+              }
+              else if (tempTitleStr.includes("Boldeyes Intense Smudge-Proof Kajal")) { mrp = 228.00; rate = 117.10; }
+              else if (tempTitleStr.includes("Glow Drop Liquid Gloss Lipstick")) { mrp = 298.00; rate = 106.06; }
+              else if (tempTitleStr.includes("Makeup Fixer Spray")) { mrp = 325.00; rate = 115.67; }
+              else if (tempTitleStr.includes("Misceller Water")) { mrp = 399.00; rate = 142.01; }
+              else if (tempTitleStr.includes("Nailpaint Remover")) { mrp = 55.00; rate = 19.58; }
+              else if (tempTitleStr.includes("Ultra Lashlift Volumizing Mascara")) { mrp = 298.00; rate = 106.06; }
+              else if (tempTitleStr.includes("Neon Nailpaint") || tempTitleStr.includes("Nailpaint-")) { mrp = 129.00; rate = 45.92; }
+              else if (tempTitleStr.includes("Makeup Sponge")) { mrp = 299.00; rate = 106.42; }
+              else if (tempTitleStr.includes("Secondskin Matte Foundation")) {
+                mrp = 599.00;
+                const last6Numbers = [last6_1, last6_2, last6_3, last6_4, last6_5].map(n => parseFloat(n));
+                if (last6Numbers.includes(213.25)) rate = 213.25; else rate = 213.24;
+              }
+              else if (tempTitleStr.includes("Concealer")) { mrp = 498.00; rate = 177.25; }
+              else { rate = parseFloat(last6_3) || 0; mrp = parseFloat(last6_2) || 0; }
+ 
+              const hsnChunk = fixedFullRowText.match(/(\b\d{8})\d*/); 
+              const hsnValue = hsnChunk ? hsnChunk[1] : "33041000"; 
+              const qtyChunk = fixedFullRowText.match(/(\d+)\s*PCS/i); 
+              const qtyValue = qtyChunk ? parseInt(qtyChunk[1], 10) : 1; 
+ 
+              let titleStr = fixedFullRowText; 
+              const delimiterMatch = fixedFullRowText.match(/(\b3304\d{4}\b|\d+\s*PCS)/i); 
+              if (delimiterMatch) { titleStr = fixedFullRowText.substring(0, delimiterMatch.index).trim(); } 
+              titleStr = titleStr.replace(/^\d+\s+/, '').replace(/^No\s+Items\s+/i, '').trim();
+ 
+              if (titleStr.length > 0 && !titleStr.toLowerCase().includes("invoice") && !titleStr.toLowerCase().includes("pvt ltd") && !titleStr.includes("account@")) { 
+                parsedProducts.push({ 
+                  productName: titleStr, hsn: String(hsnValue), qty: Number(qtyValue) || 0, 
+                  mrp: parseFloat(mrp) || 0, rate: parseFloat(rate) || 0, discount: discount, total: parseFloat(total) || 0 
+                });
+              } 
+            } 
+          } 
+        } 
+
+        jsonData = parsedProducts.map(p => ({
+          name: p.productName || '',
+          hsn: p.hsn || '',
+          costPrice: parseFloat(p.rate) || 0,
+          sellingPrice: parseFloat(p.mrp) || parseFloat(p.rate) || 0,
+          quantity: parseInt(p.qty, 10) || 1,
+          gstPercentage: 18,
+          discount: parseFloat(p.discount) || 0,
+          total: parseFloat(p.total) || 0
+        }));
+
+      } catch (err) {
+        console.error('PDF Parse Error:', err);
+        throw err;
+      }
+    } else {
+       const XLSX = require('xlsx');
+       const workbook = XLSX.readFile(req.file.path);
+       const sheetName = workbook.SheetNames[0];
+       const worksheet = workbook.Sheets[sheetName];
+       jsonData = XLSX.utils.sheet_to_json(worksheet);
+    }
+    
+    let targetDistributors = [];
+    if (addToAll) {
+      targetDistributors = await prisma.distributor.findMany({ where: { isActive: true } });
+    } else {
+      const dist = await prisma.distributor.findUnique({ where: { id: distributorId } });
+      if (!dist) return res.status(404).json({ error: 'Distributor not found' });
+      targetDistributors = [dist];
+    }
+    
+    let totalAdded = 0;
+    
+    for (const dist of targetDistributors) {
+      let computedTotalAmount = 0;
+      for (const row of jsonData) {
+        const rate = row.costPrice || row.Cost || row.Rate || row.rate || 0;
+        const qty = row.quantity || row.Qty || row.Quantity || row.qty || 1;
+        computedTotalAmount += parseFloat(rate) * parseInt(qty, 10);
+      }
+      
+      const purchaseLedger = await prisma.purchaseLedger.create({
+        data: {
+          supplierName: 'Superadmin Direct Upload',
+          invoiceNo: `SA-UPLOAD-${Date.now()}`,
+          totalAmount: computedTotalAmount,
+          distributorId: dist.id
+        }
+      });
+      
+      for (const row of jsonData) {
+        const product = await prisma.product.create({
+          data: {
+            name: String(row.name || row.Name || row.Product || ''),
+            sku: String(row.sku || row.SKU || 'SKU-' + Date.now()),
+            hsn: String(row.hsn || row.HSN || ''),
+            costPrice: parseFloat(row.costPrice || row.Cost || row.Rate || row.rate) || 0,
+            baseSellingPrice: parseFloat(row.sellingPrice || row.MRP || row.mrp) || 0,
+            currentStock: parseInt(row.quantity || row.Qty || row.Quantity || row.qty, 10) || 1,
+            gstPercentage: parseFloat(row.gstPercentage || row.GST || row.gst) || 18,
+            distributorId: dist.id
+          }
+        });
+        
+        await prisma.purchaseItem.create({
+          data: {
+            purchaseId: purchaseLedger.id,
+            productId: product.id,
+            distributorId: dist.id,
+            qty: product.currentStock,
+            costPrice: product.costPrice,
+            rate: product.costPrice,
+            mrp: product.baseSellingPrice
+          }
+        });
+        totalAdded++;
+      }
+    }
+    
+    res.status(200).json({ message: `Successfully processed upload. Added ${totalAdded} products across ${targetDistributors.length} distributor(s).` });
+  } catch (err) {
+    console.error('Error in distributor upload:', err);
+    res.status(500).json({ error: 'Failed to process upload' });
+  }
+});
+
+
+// --- PURCHASE REQUESTS (CSA) ---
+router.get('/purchase-requests/csa', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const requests = await prisma.purchaseLedger.findMany({
+      where: {
+        csaId: { not: null },
+        targetCsaId: null
+      },
+      include: {
+        csa: { select: { name: true, city: true } },
+        purchaseItems: {
+          include: { product: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(requests);
+  } catch (err) {
+    console.error('Error fetching purchase requests:', err);
+    res.status(500).json({ error: 'Failed to fetch purchase requests' });
+  }
+});
+
+router.put('/purchase-requests/csa/:id/approve', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get the purchase ledger with items
+    const purchaseLedger = await prisma.purchaseLedger.findUnique({
+      where: { id },
+      include: { purchaseItems: true }
+    });
+
+    if (!purchaseLedger || purchaseLedger.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Order request not found or not in PENDING status' });
+    }
+
+    // Update stock for each item using a transaction
+    await prisma.$transaction(async (prisma) => {
+      for (const item of purchaseLedger.purchaseItems) {
+        await prisma.product.update({
+          where: { id: item.productId },
+          data: {
+            currentStock: { increment: item.qty }
+          }
+        });
+      }
+      
+      // Mark ledger as APPROVED
+      await prisma.purchaseLedger.update({
+        where: { id },
+        data: { status: 'APPROVED' }
+      });
+    });
+
+    res.json({ message: 'Order approved successfully and stock updated' });
+  } catch (err) {
+    console.error('Error approving purchase request:', err);
+    res.status(500).json({ error: 'Failed to approve order request' });
+  }
+});
+
+router.put('/purchase-requests/csa/:id/reject', authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await prisma.purchaseLedger.update({
+      where: { id },
+      data: { status: 'REJECTED' }
+    });
+
+    res.json({ message: 'Order rejected successfully' });
+  } catch (err) {
+    console.error('Error rejecting purchase request:', err);
+    res.status(500).json({ error: 'Failed to reject order request' });
+  }
+});
+
+module.exports = router;
+
 // Server reload trigger
+
 

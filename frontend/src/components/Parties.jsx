@@ -1,5 +1,7 @@
 import storage from '../utils/storage'
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Eye } from 'lucide-react'
 
 const BASE_API_URL = import.meta.env.VITE_API_URL
 const API_URL = `${BASE_API_URL}/parties`
@@ -10,6 +12,7 @@ const getAuthHeaders = () => {
 }
 
 function Parties() {
+  const navigate = useNavigate()
   const [parties, setParties] = useState([])
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -114,7 +117,7 @@ function Parties() {
   return (
     <div className="p-4 md:p-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Parties (Customers/Retailers)</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Customer Master</h1>
         <button
           onClick={openAddModal}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 md:px-6 py-2 rounded-lg font-medium transition"
@@ -176,6 +179,12 @@ function Parties() {
                       <td className="px-4 md:px-6 py-4 text-gray-600 max-w-xs truncate text-sm md:text-base">{(typeof party.address === 'string' && party.address) ? party.address : '-'}</td>
                       <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right space-x-2">
                         <button
+                          onClick={() => navigate(`/parties/${party.id}`)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-100 rounded-lg text-sm font-medium transition-colors mr-2"
+                        >
+                          <Eye size={16} /> View
+                        </button>
+                        <button
                           onClick={() => openEditModal(party)}
                           className="text-blue-600 hover:text-blue-800 font-medium text-sm md:text-base"
                         >
@@ -183,7 +192,7 @@ function Parties() {
                         </button>
                         <button
                           onClick={() => handleDelete(party.id)}
-                          className="text-red-600 hover:text-red-800 font-medium text-sm md:text-base"
+                          className="text-red-600 hover:text-red-800 font-medium text-sm md:text-base ml-2"
                         >
                           Delete
                         </button>
